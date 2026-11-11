@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --color-zaio-blue: #2b2ecf;
+  --color-zaio-sun: #ffd400;
+  --color-zaio-ink: #101116;
+  --color-zaio-paper: #f9fafc;
+  --color-zaio-deep: #181c80;
+  --color-zaio-bright: #4860f8;
+  --color-zaio-sky: #acbdf3;
+  --color-zaio-mist: #e5eaf8;
+  --color-zaio-graphite: #313339;
+  --color-zaio-slate: #666970;
+  --color-zaio-cloud: #e5e7eb;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--color-zaio-paper);
+  color: var(--color-zaio-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-zaio-blue) 25%, transparent);
+}
+
+.input {
+  display: block;
+  width: 100%;
+  border-radius: 0.625rem;
+  border: 1px solid var(--color-zaio-cloud);
+  background: #ffffff;
+  padding: 0.5625rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--color-zaio-ink);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.input::placeholder {
+  color: var(--color-zaio-slate);
+}
+
+.input:hover {
+  border-color: color-mix(in srgb, var(--color-zaio-ink) 25%, transparent);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-zaio-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-zaio-blue) 16%, transparent);
+}
+
+/* Practical-exam IDE scrollbars — follow whichever --ide-* theme vars are set
+   on an ancestor (see codeMirrorIdeTheme.ts / PracticalExamPage.tsx). */
+.cm-editor .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-track {
+  background: var(--ide-editor-bg, #151515);
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--ide-border, #383838);
+  border-radius: 6px;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--color-zaio-blue);
+}

@@ -1,0 +1,481 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ExamType {
+  MCQ
+  PRACTICAL
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+}
+
+model Cohort {
+  id        String    @id @default(cuid())
+  name      String
+  programme String
+  startDate DateTime
+  examDate  DateTime
+  zoomLink  String
+  /// Real email/SMS OTP delivery is only attempted for a student in this
+  /// cohort when this is true AND the server-wide OTP_DELIVERY_MODE is
+  /// "live". False by default — a brand-new cohort never accidentally
+  /// receives real OTPs. See server/src/lib/otp.ts.
+  realOtpEligible Boolean @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  students  Student[]
+  exams     Exam[]
+}
+
+model Student {
+  id              String           @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String           @unique
+  phone           String?          @unique
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  /// True only for records auto-created by the temporary, heavily-gated
+  /// open tester self-registration flow (server/src/routes/openTestRegistration.ts).
+  /// False for every real/admin-created student. See docs/OPEN-TEST-REGISTRATION.md.
+  isTestRegistration Boolean       @default(false)
+  cohortId        String
+  cohort          Cohort           @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  assignments     ExamAssignment[]
+  sessions        StudentSession[]
+  otpTokens       OtpToken[]
+  otpDeliveryFailures OtpDeliveryFailure[]
+}
+
+enum PracticalTestKind {
+  HTML_CONTAINS
+  CSS_CONTAINS
+  JS_CONTAINS
+  HTML_SELECTOR
+  FILE_REGEX
+}
+
+model Exam {
+  id              String               @id @default(cuid())
+  title           String
+  type            ExamType             @default(MCQ)
+  durationMinutes Int
+  instructions    String               @default("")
+  /// True for an exam offered in the active exam-assignment picker; false
+  /// for obsolete/duplicate/QA-audit exams kept only for their historical
+  /// assignments/submissions. Never deleted, never hidden from existing
+  /// assignments or results — this only controls whether NEW assignments
+  /// can be created against it. See docs/EXAM-CATALOG.md.
+  isActive        Boolean              @default(true)
+  cohortId        String?
+  cohort          Cohort?              @relation(fields: [cohortId], references: [id])
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  questions       McqQuestion[]
+  assignments     ExamAssignment[]
+  practicalTests  PracticalTestCase[]
+}
+
+model PracticalTestCase {
+  id         String            @id @default(cuid())
+  examId     String
+  exam       Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  label      String
+  kind       PracticalTestKind
+  targetFile String?
+  expression String
+  points     Int               @default(1)
+  sortOrder  Int               @default(0)
+}
+
+model McqQuestion {
+  id           String @id @default(cuid())
+  examId       String
+  exam         Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  prompt       String
+  options      String
+  correctIndex Int
+  sortOrder    Int    @default(0)
+}
+
+enum ModerationStatus {
+  PENDING
+  REVIEWED
+  COMPLETED
+}
+
+model ExamAssignment {
+  id               String                   @id @default(cuid())
+  examId           String
+  studentId        String
+  exam             Exam                     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student          Student                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status           AssignmentStatus         @default(ASSIGNED)
+  assignedAt       DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  attempt          McqAttempt?
+  workspace        PracticalWorkspace?
+  assessorReview   PracticalAssessorReview?
+  moderationCase   ModerationCase?
+  evidenceRecord   EvidenceRecord?
+
+  @@unique([examId, studentId])
+}
+
+enum EvidenceArtifactKind {
+  MCQ_ATTEMPT
+  PRACTICAL_SUBMISSION
+  CODE_HISTORY
+  PROCTORING_RECORDING
+  PROCTORING_EVENTS
+  ASSESSOR_REVIEW
+  MODERATION
+}
+
+enum EvidenceArtifactStatus {
+  PRESENT
+  MISSING
+  SIMULATED
+}
+
+model EvidenceRecord {
+  id                String             @id @default(cuid())
+  assignmentId      String             @unique
+  assignment        ExamAssignment     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  submissionStatus  AssignmentStatus   @default(ASSIGNED)
+  recordingStatus   String             @default("none")
+  lastSyncedAt      DateTime           @default(now())
+  createdAt         DateTime           @default(now())
+  artifacts         EvidenceArtifact[]
+  auditLogs         EvidenceAuditLog[]
+}
+
+model EvidenceArtifact {
+  id             String                   @id @default(cuid())
+  evidenceId     String
+  evidence       EvidenceRecord           @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  kind           EvidenceArtifactKind
+  status         EvidenceArtifactStatus
+  sourceRecordId String                   @default("")
+  label          String
+  filePath       String?
+  mimeType       String?
+  sizeBytes      Int?
+  capturedAt     DateTime?
+  metaJson       String                   @default("{}")
+  createdAt      DateTime                 @default(now())
+
+  @@unique([evidenceId, kind, sourceRecordId])
+}
+
+model EvidenceAuditLog {
+  id         String         @id @default(cuid())
+  evidenceId String
+  evidence   EvidenceRecord @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  action     String
+  actorLabel String         @default("demo-admin")
+  detail     String
+  createdAt  DateTime       @default(now())
+}
+
+model ModerationCase {
+  id           String             @id @default(cuid())
+  assignmentId String             @unique
+  assignment   ExamAssignment     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  status       ModerationStatus   @default(PENDING)
+  advisoryFlagsJson String        @default("[]")
+  updatedAt    DateTime           @updatedAt
+  createdAt    DateTime           @default(now())
+  records      ModerationRecord[]
+}
+
+model ModerationRecord {
+  id            String           @id @default(cuid())
+  caseId        String
+  case          ModerationCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignmentId  String
+  moderatorName String
+  decision      String
+  comments      String           @default("")
+  statusAfter   ModerationStatus
+  createdAt     DateTime         @default(now())
+}
+
+model PracticalWorkspace {
+  id           String                @id @default(cuid())
+  assignmentId String                @unique
+  assignment   ExamAssignment        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  activeFile   String                @default("index.html")
+  startedAt    DateTime              @default(now())
+  lockedAt     DateTime?
+  lastSavedAt  DateTime              @default(now())
+  files        PracticalFile[]
+  submissions  PracticalSubmission[]
+}
+
+model PracticalFile {
+  id          String             @id @default(cuid())
+  workspaceId String
+  workspace   PracticalWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  filename    String
+  content     String             @default("")
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([workspaceId, filename])
+}
+
+model PracticalSubmission {
+  id            String                   @id @default(cuid())
+  workspaceId   String
+  workspace     PracticalWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignmentId  String
+  studentId     String
+  filesSnapshot String
+  submittedAt   DateTime                 @default(now())
+  isFinal       Boolean                  @default(true)
+  autoAssessment PracticalAutoAssessment?
+}
+
+model PracticalAutoAssessment {
+  id              String              @id @default(cuid())
+  submissionId    String              @unique
+  submission      PracticalSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assignmentId    String
+  scorePercent    Float
+  earnedPoints    Int
+  maxPoints       Int
+  reportJson      String
+  ranAt           DateTime            @default(now())
+}
+
+model PracticalAssessorReview {
+  id                      String   @id @default(cuid())
+  assignmentId            String   @unique
+  assignment              ExamAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  submissionId            String
+  automatedScorePercent   Float
+  finalScorePercent       Float?
+  feedback                String   @default("")
+  updatedAt               DateTime @updatedAt
+  createdAt               DateTime @default(now())
+}
+
+model PracticalAssessorReviewLog {
+  id                    String   @id @default(cuid())
+  assignmentId          String
+  submissionId          String
+  automatedScorePercent Float
+  finalScorePercent     Float?
+  feedback              String
+  createdAt             DateTime @default(now())
+}
+
+model McqAttempt {
+  id           String         @id @default(cuid())
+  assignmentId String         @unique
+  assignment   ExamAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  answers      String?
+  scorePercent Float?
+  startedAt    DateTime       @default(now())
+  submittedAt  DateTime?
+}
+
+enum OtpChannel {
+  EMAIL
+  SMS
+}
+
+model OtpToken {
+  id          String     @id @default(cuid())
+  studentId   String
+  student     Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  channel     OtpChannel @default(EMAIL)
+  codeHash    String
+  attempts    Int        @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([studentId, consumedAt, expiresAt])
+  @@index([studentId, channel, createdAt])
+}
+
+enum OtpDeliveryErrorCategory {
+  AUTH_ERROR
+  INVALID_RECIPIENT
+  RATE_LIMITED
+  NETWORK_ERROR
+  UNKNOWN
+}
+
+enum OtpProviderName {
+  RESEND
+  TWILIO
+}
+
+/**
+ * Redacted record of a failed real OTP delivery attempt — classification +
+ * correlation ID only. Deliberately holds no raw provider error text, no
+ * recipient email/phone, and no OTP code; see server/src/lib/otp.ts.
+ */
+model OtpDeliveryFailure {
+  id            String                    @id @default(cuid())
+  correlationId String                    @unique
+  studentId     String
+  student       Student                   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  channel       OtpChannel
+  provider      OtpProviderName
+  category      OtpDeliveryErrorCategory
+  createdAt     DateTime                  @default(now())
+
+  @@index([createdAt])
+}
+
+enum ProctoringSessionStatus {
+  SETUP
+  ACTIVE
+  ENDED
+}
+
+enum ProctoringRecordingKind {
+  WEBCAM_MIC
+  SCREEN
+}
+
+enum ProctoringCaptureTier {
+  INVALID_EMPTY
+  DEMO_UNVERIFIED
+  VERIFIED_REAL
+}
+
+model ProctoringSession {
+  id              String                   @id @default(cuid())
+  assignmentId    String
+  studentId       String
+  status          ProctoringSessionStatus  @default(SETUP)
+  webcamStatus    String                   @default("pending")
+  screenStatus    String                   @default("not_requested")
+  simulatedDemo   Boolean                  @default(true)
+  startedAt       DateTime                 @default(now())
+  endedAt         DateTime?
+  updatedAt       DateTime                 @updatedAt
+  events          ProctoringEvent[]
+  recordings      ProctoringRecording[]
+}
+
+model ProctoringEvent {
+  id        String            @id @default(cuid())
+  sessionId String
+  session   ProctoringSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  advisory  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+}
+
+model ProctoringRecording {
+  id          String                  @id @default(cuid())
+  sessionId   String
+  session     ProctoringSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind        ProctoringRecordingKind
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  captureTier ProctoringCaptureTier   @default(DEMO_UNVERIFIED)
+  storedAt    DateTime                @default(now())
+}
+
+model StudentSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ——— Individual administrator accounts, replacing the shared ADMIN_API_KEY ———
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  ASSESSOR
+  MODERATOR
+}
+
+model Administrator {
+  id                  String    @id @default(cuid())
+  fullName            String
+  email               String    @unique
+  passwordHash        String
+  role                AdminRole
+  active              Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastLoginAt         DateTime?
+  passwordChangedAt   DateTime  @default(now())
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  sessions            AdminSession[]
+  passwordResetTokens AdminPasswordResetToken[]
+  auditLogs           AdminAuditLog[]
+}
+
+/** Cookie-based admin session — separate from StudentSession by design
+ * (never reuse student sessions for administrators). The session cookie
+ * itself is this row's `token`; CSRF protection uses the stateless
+ * double-submit pattern (a second, non-httpOnly cookie compared against a
+ * request header), so no CSRF secret needs to live here. */
+model AdminSession {
+  id          String        @id @default(cuid())
+  token       String        @unique
+  adminId     String
+  admin       Administrator @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  userAgent   String        @default("")
+  expiresAt   DateTime
+  createdAt   DateTime      @default(now())
+
+  @@index([adminId])
+}
+
+model AdminPasswordResetToken {
+  id         String        @id @default(cuid())
+  tokenHash  String        @unique
+  adminId    String
+  admin      Administrator @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([adminId])
+}
+
+/** Who did what, to what, when — never passwords/OTPs/API keys/session
+ * tokens. adminId is nullable + SetNull so deleting an admin account doesn't
+ * erase their action history. */
+model AdminAuditLog {
+  id         String         @id @default(cuid())
+  adminId    String?
+  admin      Administrator? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String?
+  targetId   String?
+  detail     String         @default("")
+  createdAt  DateTime       @default(now())
+
+  @@index([createdAt])
+  @@index([adminId])
+}
