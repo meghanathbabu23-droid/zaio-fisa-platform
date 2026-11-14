@@ -51,6 +51,33 @@ function jsonHeaders(extra?: HeadersInit): HeadersInit {
   return { "Content-Type": "application/json", ...extra };
 }
 
+/**
+ * Every network call in this app goes through apiUrl() (this is the only
+ * file that calls fetch() at all) — so the backend origin is controlled
+ * from this one place, never hardcoded in a component.
+ *
+ * Left unset (the empty-string default), every request stays a relative
+ * path, i.e. same-origin from the browser's point of view. In production
+ * that's deliberate: netlify.toml proxies /api/* to the real backend
+ * server-side, so the browser never sees a cross-origin request. This
+ * isn't just tidiness — the admin session cookie (fisa_admin_session,
+ * server/src/lib/adminSession.ts) is set with SameSite=Lax, which browsers
+ * do NOT attach to a cross-site fetch/XHR request, only to a same-origin
+ * one or a top-level navigation. Setting VITE_API_BASE_URL to an absolute
+ * cross-origin URL (e.g. pointing straight at the Heroku/Render backend,
+ * bypassing the Netlify proxy) would silently break admin login — the
+ * cookie just wouldn't be sent, and every admin-authenticated request
+ * would 401 with no obvious cause. The student OTP/Bearer-token flow
+ * (sessionStorage, Authorization header) is unaffected either way, since
+ * it was never cookie-based. Leave this unset in Netlify's production env;
+ * it exists for local/alternate setups that don't proxy same-origin.
+ */
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Sends the httpOnly admin session cookie automatically (credentials:
@@ -62,7 +89,7 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 async function adminFetch(path: string, init?: RequestInit): Promise<Response> {
   const method = (init?.method ?? "GET").toUpperCase();
   const csrf = getCsrfToken();
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     credentials: "include",
     headers: {
@@ -79,7 +106,7 @@ async function adminFetch(path: string, init?: RequestInit): Promise<Response> {
 // ——— Admin auth (individual accounts, not a shared key) ———
 
 export async function loginAdmin(email: string, password: string): Promise<AdminIdentity> {
-  const res = await fetch("/api/admin/login", {
+  const res = await fetch(apiUrl("/api/admin/login"), {
     method: "POST",
     credentials: "include",
     headers: jsonHeaders(),
@@ -108,7 +135,7 @@ export async function changeAdminPassword(currentPassword: string, newPassword: 
 }
 
 export async function requestAdminPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch("/api/admin/password-reset/request", {
+  const res = await fetch(apiUrl("/api/admin/password-reset/request"), {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify({ email }),
@@ -117,7 +144,7 @@ export async function requestAdminPasswordReset(email: string): Promise<{ ok: bo
 }
 
 export async function confirmAdminPasswordReset(token: string, newPassword: string): Promise<void> {
-  const res = await fetch("/api/admin/password-reset/confirm", {
+  const res = await fetch(apiUrl("/api/admin/password-reset/confirm"), {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify({ token, newPassword }),
@@ -342,7 +369,7 @@ export async function deleteAssignment(id: string): Promise<void> {
 export async function requestOtp(channel: OtpChannel, value: string): Promise<OtpRequestResponse> {
   void channel; // always "email" — kept as a parameter to mirror the server's OtpChannel enum
   return handleResponse(
-    await fetch("/api/auth/otp/request", {
+    await fetch(apiUrl("/api/auth/otp/request"), {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({ email: value }),
@@ -357,7 +384,7 @@ export async function verifyOtp(
 ): Promise<{ token: string; student: StudentAuthStudent }> {
   void channel; // always "email" — kept as a parameter to mirror the server's OtpChannel enum
   return handleResponse(
-    await fetch("/api/auth/otp/verify", {
+    await fetch(apiUrl("/api/auth/otp/verify"), {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({ email: value, code }),
@@ -379,7 +406,7 @@ export async function registerTester(
   phone: string
 ): Promise<{ ok: true; reused: boolean; student: { id: string; firstName: string; lastName: string; email: string; phone: string | null } }> {
   return handleResponse(
-    await fetch("/api/auth/register-tester", {
+    await fetch(apiUrl("/api/auth/register-tester"), {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({ fullName, email, phone }),
@@ -389,7 +416,7 @@ export async function registerTester(
 
 function authedStudentFetch(path: string, init?: RequestInit) {
   const token = getStudentToken();
-  return fetch(path, {
+  return fetch(apiUrl(path), {
     ...init,
     headers: {
       ...jsonHeaders(init?.headers),

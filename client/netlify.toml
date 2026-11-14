@@ -2,13 +2,15 @@
   command = "npm run build"
   publish = "dist"
 
-# Proxies /api/* to the live Render backend so the browser sees everything
+# Proxies /api/* to the live Heroku backend so the browser sees everything
 # as same-origin — no VITE_API_BASE_URL, no cross-origin cookie changes
-# needed. Must stay ABOVE the SPA fallback below, or /api requests would be
-# swallowed by index.html instead.
+# needed (see the comment above apiUrl() in client/src/api.ts for why that
+# matters for the admin session cookie specifically). Must stay ABOVE the
+# SPA fallback below, or /api requests would be swallowed by index.html
+# instead.
 [[redirects]]
   from = "/api/*"
-  to = "https://zaio-fisa-backend.onrender.com/api/:splat"
+  to = "https://zaio-fisa-backend-9edcd5f5b284.herokuapp.com/api/:splat"
   status = 200
   force = true
 
