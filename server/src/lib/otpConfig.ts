@@ -6,15 +6,26 @@
  */
 
 export type OtpDeliveryMode = "live" | "mock";
+export type EmailProviderName = "resend" | "gmail_smtp";
 
 function readMode(): OtpDeliveryMode {
   const raw = (process.env.OTP_DELIVERY_MODE ?? "").trim().toLowerCase();
   return raw === "mock" ? "mock" : "live";
 }
 
+/** Which live email provider to use when deliveryMode is "live". Mock mode
+ * ignores this entirely (always uses MockEmailProvider). Defaults to
+ * "resend" so existing deployments/tests are unaffected unless this is
+ * explicitly set. */
+function readEmailProviderName(): EmailProviderName {
+  const raw = (process.env.EMAIL_PROVIDER ?? "").trim().toLowerCase();
+  return raw === "gmail_smtp" ? "gmail_smtp" : "resend";
+}
+
 export const otpConfig = {
   hashSecret: process.env.OTP_HASH_SECRET ?? "",
   deliveryMode: readMode(),
+  emailProviderName: readEmailProviderName(),
   defaultPhoneRegion: (process.env.DEFAULT_PHONE_REGION ?? "ZA").toUpperCase(),
 
   otpTtlMs: 10 * 60 * 1000,
@@ -49,6 +60,10 @@ export const otpConfig = {
     authToken: process.env.TWILIO_AUTH_TOKEN ?? "",
     fromNumber: process.env.TWILIO_PHONE_NUMBER ?? "",
   },
+  gmailSmtp: {
+    user: process.env.SMTP_USER ?? "",
+    appPassword: process.env.SMTP_APP_PASSWORD ?? "",
+  },
 };
 
 /** Exported for reuse anywhere else that needs the same "looks like an
@@ -64,6 +79,12 @@ const E164_RE = /^\+[1-9]\d{6,14}$/;
  * Checks every required live-delivery credential for presence AND basic
  * format validity (not just "is it a non-empty string"). Returns the list of
  * problems found — empty means fully configured and shaped correctly.
+ *
+ * Resend-only: Resend is the sole provider live student OTP delivery needs
+ * today, since the SMS/phone channel is disabled (lib/otp.ts's requestOtp()/
+ * verifyOtp() reject it outright before any provider is ever selected).
+ * Twilio credentials are deliberately NOT checked here — see
+ * validateTwilioProviderConfig() below.
  */
 export function validateLiveProviderConfig(): string[] {
   const problems: string[] = [];
@@ -79,6 +100,54 @@ export function validateLiveProviderConfig(): string[] {
   } else if (!EMAIL_SHAPE_RE.test(otpConfig.resend.fromEmail)) {
     problems.push("RESEND_FROM_EMAIL is not a valid email address");
   }
+
+  return problems;
+}
+
+/**
+ * Gmail SMTP credential validation — checked only when emailProviderName is
+ * "gmail_smtp". A Gmail App Password is a 16-character value (Google shows
+ * it with spaces, e.g. "abcd efgh ijkl mnop"); spaces are stripped before
+ * the length check since either form is a valid way to paste it into .env.
+ */
+export function validateGmailSmtpConfig(): string[] {
+  const problems: string[] = [];
+
+  if (!otpConfig.gmailSmtp.user) {
+    problems.push("SMTP_USER is missing");
+  } else if (!EMAIL_SHAPE_RE.test(otpConfig.gmailSmtp.user)) {
+    problems.push("SMTP_USER is not a valid email address");
+  }
+
+  const appPasswordDigits = otpConfig.gmailSmtp.appPassword.replace(/\s/g, "");
+  if (!appPasswordDigits) {
+    problems.push("SMTP_APP_PASSWORD is missing");
+  } else if (appPasswordDigits.length < 16) {
+    problems.push("SMTP_APP_PASSWORD looks too short to be a real Gmail App Password (expected 16 characters)");
+  }
+
+  return problems;
+}
+
+/** Validates whichever email provider is actually selected for live mode —
+ * Resend or Gmail SMTP, never both. Call this instead of
+ * validateLiveProviderConfig() directly anywhere that needs to know "is live
+ * email delivery actually ready right now," so the check always matches
+ * EMAIL_PROVIDER. */
+export function validateActiveEmailProviderConfig(): string[] {
+  return otpConfig.emailProviderName === "gmail_smtp" ? validateGmailSmtpConfig() : validateLiveProviderConfig();
+}
+
+/**
+ * Twilio/SMS credential validation. NOT called by assertOtpConfigSafeToBoot()
+ * or the admin delivery-status endpoint today — student phone/SMS login is
+ * disabled, so Twilio configuration has no bearing on whether live student
+ * OTP delivery actually works. Kept, rather than deleted, purely so the
+ * format-checking logic isn't lost if the SMS channel is ever re-enabled —
+ * at that point, re-wire this back into the live-mode boot check.
+ */
+export function validateTwilioProviderConfig(): string[] {
+  const problems: string[] = [];
 
   if (!otpConfig.twilio.accountSid) {
     problems.push("TWILIO_ACCOUNT_SID is missing");
@@ -133,10 +202,10 @@ export function assertOtpConfigSafeToBoot(): void {
   }
 
   if (otpConfig.deliveryMode === "live") {
-    const problems = validateLiveProviderConfig();
+    const problems = validateActiveEmailProviderConfig();
     if (problems.length) {
       throw new Error(
-        `Refusing to start: OTP_DELIVERY_MODE=live but provider configuration is invalid:\n` +
+        `Refusing to start: OTP_DELIVERY_MODE=live (EMAIL_PROVIDER=${otpConfig.emailProviderName}) but provider configuration is invalid:\n` +
           problems.map((p) => `  - ${p}`).join("\n") +
           `\nSet OTP_DELIVERY_MODE=mock for local development/testing without real provider credentials. ` +
           `There is no automatic fallback to mock — live mode either boots fully configured or not at all.`

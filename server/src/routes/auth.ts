@@ -1,45 +1,46 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { OtpChannel, requestOtp, verifyOtp, GENERIC_REQUEST_MESSAGE, GENERIC_VERIFY_ERROR, GENERIC_TOO_MANY } from "../lib/otp.js";
-import { normalizePhoneToE164 } from "../lib/phone.js";
 import { otpRequestIpLimiter, otpVerifyIpLimiter } from "../lib/rateLimit.js";
 
 export const authRouter = Router();
 
 type Identifier = { channel: OtpChannel; value: string };
 
-/** Exactly one of email/phone, never both — closes the old OR-match mix-up. */
+const INVALID_IDENTIFIER_MESSAGE = "Enter your registered Zaio email.";
+
+/**
+ * Student OTP sign-in is email-only. A `phone` field is rejected outright
+ * (not silently ignored) — whether it's sent alone or alongside `email` —
+ * so a stale client still offering a phone option gets a clear error rather
+ * than a request that quietly succeeds on the email half. See lib/otp.ts's
+ * matching channel guards in requestOtp()/verifyOtp() for the second,
+ * independent layer of this same restriction.
+ */
 function parseIdentifier(body: Record<string, unknown>): Identifier | "invalid" {
   const emailRaw = typeof body.email === "string" ? body.email.trim() : "";
   const phoneRaw = typeof body.phone === "string" ? body.phone.trim() : "";
-  const hasEmail = emailRaw.length > 0;
-  const hasPhone = phoneRaw.length > 0;
 
-  if (hasEmail === hasPhone) {
-    // Neither provided, or both provided — both are rejected the same way.
+  if (!emailRaw || phoneRaw) {
     return "invalid";
   }
 
-  if (hasEmail) {
-    return { channel: OtpChannel.EMAIL, value: emailRaw.toLowerCase() };
-  }
-
-  const normalized = normalizePhoneToE164(phoneRaw);
-  if (!normalized.ok) {
-    return "invalid";
-  }
-  return { channel: OtpChannel.SMS, value: normalized.e164 };
+  return { channel: OtpChannel.EMAIL, value: emailRaw.toLowerCase() };
 }
 
 authRouter.post("/otp/request", otpRequestIpLimiter, async (req, res) => {
   const identifier = parseIdentifier(req.body as Record<string, unknown>);
   if (identifier === "invalid") {
-    res.status(400).json({ error: "Enter exactly one: a valid email or a valid phone number." });
+    res.status(400).json({ error: INVALID_IDENTIFIER_MESSAGE });
     return;
   }
 
   const result = await requestOtp(identifier);
   if (!result.ok) {
+    if (result.reason === "unsupported_channel") {
+      res.status(400).json({ error: INVALID_IDENTIFIER_MESSAGE });
+      return;
+    }
     res.status(429).json({ error: GENERIC_TOO_MANY });
     return;
   }
@@ -58,12 +59,16 @@ authRouter.post("/otp/verify", otpVerifyIpLimiter, async (req, res) => {
   const codeStr = typeof body.code === "string" ? body.code.trim() : "";
 
   if (identifier === "invalid" || !codeStr) {
-    res.status(400).json({ error: "Enter exactly one of email/phone, and the code." });
+    res.status(400).json({ error: "Enter your registered Zaio email, and the code." });
     return;
   }
 
   const result = await verifyOtp({ ...identifier, code: codeStr });
   if (!result.ok) {
+    if (result.reason === "unsupported_channel") {
+      res.status(400).json({ error: INVALID_IDENTIFIER_MESSAGE });
+      return;
+    }
     const status = result.reason === "rate_limited" ? 429 : 401;
     const message = result.reason === "rate_limited" ? GENERIC_TOO_MANY : GENERIC_VERIFY_ERROR;
     res.status(status).json({ error: message });

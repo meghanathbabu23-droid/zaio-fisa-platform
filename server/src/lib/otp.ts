@@ -10,7 +10,7 @@ import {
   recordStudentVerifyFailure,
 } from "./rateLimit.js";
 
-export const GENERIC_REQUEST_MESSAGE = "If that email or phone is registered, a verification code has been sent.";
+export const GENERIC_REQUEST_MESSAGE = "If that email is registered, a verification code has been sent.";
 export const GENERIC_VERIFY_ERROR = "Invalid code. Please request a new one.";
 export const GENERIC_TOO_MANY = "Too many requests. Please wait and try again.";
 
@@ -35,7 +35,8 @@ export function isEligibleForRealDelivery(student: { cohort: { realOtpEligible: 
 
 export type RequestOtpResult =
   | { ok: true; expiresAt: Date; cooldownSeconds: number }
-  | { ok: false; reason: "rate_limited" };
+  | { ok: false; reason: "rate_limited" }
+  | { ok: false; reason: "unsupported_channel" };
 
 /**
  * Request a new OTP. Always looks the same to the caller whether or not the
@@ -46,6 +47,16 @@ export type RequestOtpResult =
  */
 export async function requestOtp(params: { channel: OtpChannel; value: string }): Promise<RequestOtpResult> {
   const { channel, value } = params;
+
+  // Student OTP delivery is email-only. Checked here, not just at the HTTP
+  // route layer, so this is a real, structural "disabled" rather than a
+  // single removable gate — the SMS provider/schema enum stay in place for
+  // a possible future re-enable, but no code path can mint or verify an SMS
+  // OTP today. Returns before touching rate-limit state, since a request
+  // that was never going to succeed shouldn't consume a student's budget.
+  if (channel !== OtpChannel.EMAIL) {
+    return { ok: false, reason: "unsupported_channel" };
+  }
 
   if (!checkResendCooldown(value) || !checkIdentifierRateLimit(value)) {
     return { ok: false, reason: "rate_limited" };
@@ -69,6 +80,14 @@ export async function requestOtp(params: { channel: OtpChannel; value: string })
       channel,
       codeHash: hashOtp(code),
       expiresAt,
+      // consumedAt is optional with no default; writing it explicitly as
+      // null here (rather than omitting it) is a no-op on SQLite but
+      // required on MongoDB — both the invalidate-prior-tokens update
+      // above and verifyOtp()'s lookup below filter on `consumedAt:
+      // null`, which only matches a document where that key is
+      // explicitly present with value null, not one where the key is
+      // simply absent.
+      consumedAt: null,
     },
   });
 
@@ -89,18 +108,30 @@ export async function requestOtp(params: { channel: OtpChannel; value: string })
     // OTP, no email/phone, anywhere. The console line and the DB row share
     // a correlation ID so an admin can look up "what kind of failure, for
     // which student, when" without either ever holding the raw message.
+    //
+    // The OtpProviderName schema enum only has RESEND/TWILIO — there is no
+    // GMAIL_SMTP value (adding one is a schema change, deliberately not done
+    // here without separate approval). A Gmail-SMTP failure is therefore
+    // still console-logged (sanitized, same as any other failure) but is
+    // NOT persisted to OtpDeliveryFailure, since writing RESEND for a
+    // Gmail-SMTP failure would be inaccurate, not just incomplete.
     const correlationId = generateCorrelationId();
-    await prisma.otpDeliveryFailure.create({
-      data: {
-        correlationId,
-        studentId: student.id,
-        channel,
-        provider: channel === OtpChannel.EMAIL ? OtpProviderName.RESEND : OtpProviderName.TWILIO,
-        category: result.category,
-      },
-    });
+    const provider =
+      channel === OtpChannel.EMAIL
+        ? otpConfig.emailProviderName === "gmail_smtp"
+          ? null
+          : OtpProviderName.RESEND
+        : OtpProviderName.TWILIO;
+    if (provider) {
+      await prisma.otpDeliveryFailure.create({
+        data: { correlationId, studentId: student.id, channel, provider, category: result.category },
+      });
+    }
     // eslint-disable-next-line no-console
-    console.error(`[otp] delivery failed correlationId=${correlationId} category=${result.category}`);
+    console.error(
+      `[otp] delivery failed correlationId=${correlationId} category=${result.category}` +
+        (provider ? "" : " provider=GMAIL_SMTP (not persisted — see comment above)")
+    );
   }
 
   return { ok: true, expiresAt, cooldownSeconds: otpConfig.resendCooldownMs / 1000 };
@@ -108,10 +139,17 @@ export async function requestOtp(params: { channel: OtpChannel; value: string })
 
 export type VerifyOtpResult =
   | { ok: true; token: string; sessionExpiresAt: Date; student: { id: string; firstName: string; lastName: string; email: string } }
-  | { ok: false; reason: "invalid" | "rate_limited" };
+  | { ok: false; reason: "invalid" | "rate_limited" | "unsupported_channel" };
 
 export async function verifyOtp(params: { channel: OtpChannel; value: string; code: string }): Promise<VerifyOtpResult> {
   const { channel, value, code } = params;
+
+  // See the matching guard in requestOtp() — email-only, enforced here too
+  // so verification can't succeed for a channel that was never a valid way
+  // to receive the code in the first place.
+  if (channel !== OtpChannel.EMAIL) {
+    return { ok: false, reason: "unsupported_channel" };
+  }
 
   const student = await findStudentByIdentifier(channel, value);
   if (!student) {

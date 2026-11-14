@@ -1,5 +1,5 @@
 import { prisma } from "../prisma.js";
-import { runPracticalTests, type WorkspaceFile } from "./practicalRunner.js";
+import { runInSandbox, type WorkspaceFile } from "./sandboxRunner.js";
 
 export async function runAutoAssessmentForSubmission(submissionId: string) {
   const submission = await prisma.practicalSubmission.findUnique({
@@ -18,33 +18,46 @@ export async function runAutoAssessmentForSubmission(submissionId: string) {
 
   const files = JSON.parse(submission.filesSnapshot) as WorkspaceFile[];
   const testCases = assignment.exam.practicalTests;
+  const totalMarks = assignment.exam.totalMarks;
 
-  if (testCases.length === 0) {
-    const emptyReport = {
-      results: [] as unknown[],
-      earnedPoints: 0,
-      maxPoints: 0,
-      scorePercent: 0,
-      note: "No test cases defined for this exam.",
-    };
-    const data = {
-      submissionId,
-      assignmentId: submission.assignmentId,
-      scorePercent: 0,
-      earnedPoints: 0,
-      maxPoints: 0,
-      reportJson: JSON.stringify(emptyReport),
-    };
-    if (submission.autoAssessment) {
+  async function save(data: {
+    scorePercent: number;
+    earnedPoints: number;
+    maxPoints: number;
+    earnedMarks: number | null;
+    maxMarks: number | null;
+    executionMode: string;
+    reportJson: string;
+  }) {
+    const full = { submissionId, assignmentId: submission!.assignmentId, ...data };
+    if (submission!.autoAssessment) {
       return prisma.practicalAutoAssessment.update({
-        where: { id: submission.autoAssessment.id },
-        data: { ...data, ranAt: new Date() },
+        where: { id: submission!.autoAssessment.id },
+        data: { ...full, ranAt: new Date() },
       });
     }
-    return prisma.practicalAutoAssessment.create({ data });
+    return prisma.practicalAutoAssessment.create({ data: full });
   }
 
-  const report = runPracticalTests(
+  if (testCases.length === 0) {
+    return save({
+      scorePercent: 0,
+      earnedPoints: 0,
+      maxPoints: 0,
+      earnedMarks: 0,
+      maxMarks: totalMarks ?? null,
+      executionMode: "static",
+      reportJson: JSON.stringify({
+        results: [],
+        earnedPoints: 0,
+        maxPoints: 0,
+        scorePercent: 0,
+        note: "No test cases defined for this exam.",
+      }),
+    });
+  }
+
+  const report = await runInSandbox(
     files,
     testCases.map((t) => ({
       id: t.id,
@@ -56,22 +69,19 @@ export async function runAutoAssessmentForSubmission(submissionId: string) {
     }))
   );
 
-  const data = {
-    submissionId,
-    assignmentId: submission.assignmentId,
+  // On a sandbox timeout/error, persist a clearly flagged failure rather
+  // than a 0% that looks like a genuine fail — this is exactly the case
+  // the assessor manual-override flow exists to catch (see assessor.ts).
+  const earnedMarks = totalMarks != null ? (report.scorePercent / 100) * totalMarks : null;
+  return save({
     scorePercent: report.scorePercent,
     earnedPoints: report.earnedPoints,
     maxPoints: report.maxPoints,
+    earnedMarks,
+    maxMarks: totalMarks ?? null,
+    executionMode: report.mode,
     reportJson: JSON.stringify(report),
-  };
-
-  if (submission.autoAssessment) {
-    return prisma.practicalAutoAssessment.update({
-      where: { id: submission.autoAssessment.id },
-      data: { ...data, ranAt: new Date() },
-    });
-  }
-  return prisma.practicalAutoAssessment.create({ data });
+  });
 }
 
 export async function ensureAssessorReviewStub(

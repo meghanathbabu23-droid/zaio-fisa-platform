@@ -131,6 +131,7 @@ studentPortalRouter.get("/assignments/:id/exam", async (req: AuthedRequest, res)
       id: q.id,
       prompt: q.prompt,
       options: JSON.parse(q.options) as string[],
+      marks: q.marks,
     })),
   });
 });
@@ -165,14 +166,19 @@ studentPortalRouter.post("/assignments/:id/submit", async (req: AuthedRequest, r
   }
 
   let correct = 0;
+  let earnedMarks = 0;
   for (let i = 0; i < questions.length; i++) {
     const a = answers[i];
     if (typeof a !== "number" || !Number.isInteger(a)) {
       res.status(400).json({ error: "Invalid answer index" });
       return;
     }
-    if (a === questions[i].correctIndex) correct++;
+    if (a === questions[i].correctIndex) {
+      correct++;
+      earnedMarks += questions[i].marks;
+    }
   }
+  const maxMarks = assignment.exam.totalMarks ?? questions.reduce((s, q) => s + q.marks, 0);
   const scorePercent = questions.length ? (correct / questions.length) * 100 : 0;
 
   let attemptResult;
@@ -190,6 +196,8 @@ studentPortalRouter.post("/assignments/:id/submit", async (req: AuthedRequest, r
         data: {
           answers: JSON.stringify(answers),
           scorePercent,
+          earnedMarks,
+          maxMarks,
           submittedAt: new Date(),
         },
       });
@@ -204,6 +212,8 @@ studentPortalRouter.post("/assignments/:id/submit", async (req: AuthedRequest, r
 
   res.json({
     scorePercent,
+    earnedMarks,
+    maxMarks,
     correct,
     total: questions.length,
     submittedAt: attemptResult.submittedAt?.toISOString(),

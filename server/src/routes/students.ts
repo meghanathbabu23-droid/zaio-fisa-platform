@@ -1,7 +1,13 @@
 import { Router } from "express";
-import { prisma } from "../prisma.js";
+import type { Prisma } from "@prisma/client";
+import { prisma, DB_PROVIDER } from "../prisma.js";
 import { normalizePhoneToE164 } from "../lib/phone.js";
 import { recordAuditLog } from "../lib/auditLog.js";
+import {
+  buildPhoneCreateField,
+  buildSqlitePhoneUpdateField,
+  buildMongoPhoneUpdateField,
+} from "../lib/studentPhone.js";
 import type { AuthedAdminRequest } from "../middleware/requireAdminAuth.js";
 
 export const studentsRouter = Router();
@@ -79,9 +85,16 @@ studentsRouter.post("/", async (req: AuthedAdminRequest, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
+  const { phone, ...rest } = parsed.data;
   try {
     const student = await prisma.student.create({
-      data: parsed.data,
+      // buildPhoneCreateField omits the key entirely when there's no
+      // phone, rather than writing an explicit `phone: null` — required
+      // for MongoDB's sparse unique index, and an equivalent no-op on
+      // SQLite (an undefaulted optional column with no key in `data`
+      // ends up NULL either way). Safe and correct on both backends, so
+      // no DB_PROVIDER branch is needed for create.
+      data: { ...rest, ...buildPhoneCreateField(phone) },
       include: { cohort: true },
     });
     await recordAuditLog({ adminId: req.admin!.id, action: "STUDENT_CREATED", targetType: "Student", targetId: student.id });
@@ -97,10 +110,27 @@ studentsRouter.put("/:id", async (req: AuthedAdminRequest, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
+  const { phone, ...rest } = parsed.data;
+  // DB_PROVIDER is read once at boot from ACTIVE_DB_PROVIDER (src/prisma.ts)
+  // and reflects whichever client is actually active in this process —
+  // "sqlite" locally/in tests (the default), "mongodb" once a deployment
+  // sets ACTIVE_DB_PROVIDER=mongodb, at which point src/prisma.ts has
+  // already swapped `prisma` itself to the Mongo-generated client and this
+  // branch runs for real, writing the `{ unset: true }` shape instead of
+  // an explicit `phone: null`. Both branches are exercised by this
+  // codebase's own tests (students.test.ts for SQLite,
+  // studentPhone.mongomemory.check.ts for MongoDB) against their
+  // respective real generated clients. The cast below is required because
+  // MongoDB's `{ unset: true }` operator has no equivalent shape in the
+  // SQLite-generated client's NullableStringFieldUpdateOperationsInput
+  // (verified: it only has `set`) — there is no type that is natively
+  // valid for both backends.
+  const phoneField =
+    DB_PROVIDER === "mongodb" ? buildMongoPhoneUpdateField(phone) : buildSqlitePhoneUpdateField(phone);
   try {
     const student = await prisma.student.update({
       where: { id: req.params.id },
-      data: parsed.data,
+      data: { ...rest, ...phoneField } as Prisma.StudentUpdateInput,
       include: { cohort: true },
     });
     await recordAuditLog({ adminId: req.admin!.id, action: "STUDENT_UPDATED", targetType: "Student", targetId: student.id });

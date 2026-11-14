@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth.js";
 import { cohortsRouter } from "./routes/cohorts.js";
 import { evidenceRouter } from "./routes/evidence.js";
 import { examsRouter } from "./routes/exams.js";
+import { examsGenerateRouter } from "./routes/examsGenerate.js";
 import { practicalTestCasesRouter } from "./routes/practicalTestCases.js";
 import { practicalAssessorRouter, practicalStudentRouter } from "./routes/practical.js";
 import {
@@ -97,6 +98,9 @@ app.use("/api/admin", adminAuthRouter);
 // router-level check here.
 app.use("/api/cohorts", requireAdminAuth, requireRole(SUPER_ADMIN, ADMIN), cohortsRouter);
 app.use("/api/students", requireAdminAuth, requireRole(SUPER_ADMIN, ADMIN), studentsRouter);
+// Mounted before the more general /api/exams router below so its routes
+// (e.g. GET /api/exams/:id) never shadow this more specific path.
+app.use("/api/exams/generate", requireAdminAuth, requireRole(SUPER_ADMIN, ADMIN), examsGenerateRouter);
 app.use("/api/exams", requireAdminAuth, requireRole(SUPER_ADMIN, ADMIN), examsRouter);
 app.use(
   "/api/exams/:examId/practical-tests",

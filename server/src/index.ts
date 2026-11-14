@@ -18,9 +18,14 @@ try {
 const { assertOtpConfigSafeToBoot } = await import("./lib/otpConfig.js");
 const { assertCorsConfigSafeToBoot } = await import("./lib/corsConfig.js");
 const { assertOpenTestRegistrationSafeToBoot } = await import("./lib/openTestRegistrationConfig.js");
+const { assertAiConfigSafeToBoot } = await import("./lib/aiConfig.js");
 assertOtpConfigSafeToBoot();
 assertCorsConfigSafeToBoot();
 assertOpenTestRegistrationSafeToBoot();
+// Missing ANTHROPIC_API_KEY/VOYAGE_API_KEY never blocks boot — only a
+// malformed-but-present key does. AI generation is optional; everything
+// else runs independently of whether it's configured.
+assertAiConfigSafeToBoot();
 
 const { app } = await import("./app.js");
 const PORT = process.env.PORT ?? 3001;

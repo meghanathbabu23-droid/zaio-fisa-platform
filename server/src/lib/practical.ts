@@ -77,6 +77,13 @@ export async function ensurePracticalWorkspace(assignmentId: string, studentId: 
     data: {
       assignmentId,
       studentId,
+      // lockedAt is optional with no default; writing it explicitly as
+      // null here (rather than omitting it) is a no-op on SQLite but
+      // required on MongoDB — the submit endpoint's atomic double-submit
+      // guard (routes/practical.ts) filters on `lockedAt: null`, which
+      // only matches a document where that key is explicitly present
+      // with value null, not one where the key is simply absent.
+      lockedAt: null,
       files: {
         create: DEFAULT_PRACTICAL_FILES.map((f) => ({
           filename: f.filename,

@@ -64,6 +64,13 @@ enum PracticalTestKind {
   JS_CONTAINS
   HTML_SELECTOR
   FILE_REGEX
+  /// Structured JSON spec (stored in `expression`) describing a short
+  /// sequence of DOM interactions plus an assertion — the only kind that
+  /// actually executes student JS, and only ever inside the Docker sandbox
+  /// (see server/src/lib/sandboxRunner.ts). Shape:
+  /// {"steps":[{"action":"fill"|"click"|"select"|"check"|"wait","selector":string,"value"?:string,"ms"?:number}],
+  ///  "assert":{"selector":string,"condition":"exists"|"notExists"|"textContains"|"hasClass"|"attributeEquals"|"countEquals","value"?:string}}
+  DOM_BEHAVIOR
 }
 
 model Exam {
@@ -78,6 +85,13 @@ model Exam {
   /// assignments or results — this only controls whether NEW assignments
   /// can be created against it. See docs/EXAM-CATALOG.md.
   isActive        Boolean              @default(true)
+  /// Configured total marks for the exam (MCQ: sum of McqQuestion.marks must
+  /// equal this; Practical: the weighted test-case score is expressed as a
+  /// fraction of this). Nullable only because exams created before this
+  /// field existed don't have one until the one-time backfill runs — every
+  /// exam created or saved from here on always has a value. See
+  /// server/src/lib/mcqMarks.ts.
+  totalMarks      Int?
   cohortId        String?
   cohort          Cohort?              @relation(fields: [cohortId], references: [id])
   createdAt       DateTime             @default(now())
@@ -97,6 +111,12 @@ model PracticalTestCase {
   expression String
   points     Int               @default(1)
   sortOrder  Int               @default(0)
+  /// True (the default, including for every existing row via backfill) means
+  /// this test case is a private/hidden evaluation case — it never runs or
+  /// appears in the student's practice-run endpoint, only in final grading.
+  /// An admin must explicitly flip this to false to make it a public sample
+  /// test case shown to students. See server/src/routes/practical.ts.
+  isHidden   Boolean           @default(true)
 }
 
 model McqQuestion {
@@ -107,6 +127,13 @@ model McqQuestion {
   options      String
   correctIndex Int
   sortOrder    Int    @default(0)
+  /// This question's share of its Exam's totalMarks. sum(marks) across an
+  /// exam's questions must equal exam.totalMarks — enforced by
+  /// server/src/lib/mcqMarks.ts, not by the database. Default 0 is a
+  /// structural placeholder only, corrected immediately by the one-time
+  /// backfill for existing rows; every question created from here on gets a
+  /// real value via the auto-distribute helper or explicit admin input.
+  marks        Int    @default(0)
 }
 
 enum ModerationStatus {
@@ -256,6 +283,15 @@ model PracticalAutoAssessment {
   scorePercent    Float
   earnedPoints    Int
   maxPoints       Int
+  /// Absolute marks derived from the exam's totalMarks, alongside the
+  /// existing points-based fields above (kept unchanged for backward
+  /// compatibility). Null for assessments run before this field existed.
+  earnedMarks     Float?
+  maxMarks        Float?
+  /// Diagnostic/audit only — "static" (default, including all existing
+  /// rows, read as "static" when null), "sandbox", "sandbox_timeout", or
+  /// "sandbox_error". Never changes scoring behavior by itself.
+  executionMode   String?
   reportJson      String
   ranAt           DateTime            @default(now())
 }
@@ -288,8 +324,62 @@ model McqAttempt {
   assignment   ExamAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   answers      String?
   scorePercent Float?
+  /// Absolute marks alongside the existing scorePercent (kept for backward
+  /// compatibility with results.ts and existing tests/clients). Both null
+  /// until submission; both set together, never one without the other.
+  earnedMarks  Int?
+  maxMarks     Int?
   startedAt    DateTime       @default(now())
   submittedAt  DateTime?
+}
+
+enum ExamGenerationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  INSUFFICIENT_UNIQUENESS
+}
+
+/// Structured, queryable record of one AI exam-generation request — separate
+/// from, and complementary to, the plain-text AdminAuditLog trail (which
+/// still gets an EXAM_AI_GENERATED entry on success). Never stores raw AI
+/// provider prompts/completions — only the parsed config and outcome
+/// summary. See server/src/lib/questionGenerator.ts.
+model ExamGenerationJob {
+  id                  String               @id @default(cuid())
+  requestedByAdminId  String
+  configJson          String
+  status              ExamGenerationStatus @default(PENDING)
+  resultExamId        String?
+  aiModel             String
+  embeddingModel      String?
+  duplicateStatsJson  String?
+  errorMessage        String?
+  createdAt           DateTime             @default(now())
+  completedAt         DateTime?
+
+  @@index([requestedByAdminId, createdAt])
+}
+
+/// One row per AI-generated question (MCQ or a practical/coding question's
+/// scenario as a whole), storing its embedding vector for future
+/// cosine-similarity duplicate checks against the same topic/type bucket.
+/// `summary` is a short denormalized scenario description used as a
+/// negative-example hint in later generation prompts — never the full raw
+/// prompt/completion text, to minimize the blast radius of any future leak.
+model GeneratedQuestionEmbedding {
+  id             String   @id @default(cuid())
+  examId         String?
+  questionType   ExamType
+  topic          String
+  difficulty     String
+  summary        String
+  contentHash    String
+  embedding      String
+  embeddingModel String
+  createdAt      DateTime @default(now())
+
+  @@index([topic, questionType])
 }
 
 enum OtpChannel {
@@ -373,6 +463,7 @@ model ProctoringSession {
   updatedAt       DateTime                 @updatedAt
   events          ProctoringEvent[]
   recordings      ProctoringRecording[]
+  recordingChunks ProctoringRecordingChunk[]
 }
 
 model ProctoringEvent {
@@ -395,6 +486,27 @@ model ProctoringRecording {
   sizeBytes   Int
   captureTier ProctoringCaptureTier   @default(DEMO_UNVERIFIED)
   storedAt    DateTime                @default(now())
+}
+
+/// Staging rows for incremental/resumable recording upload (see
+/// docs/RECORDING-RELIABILITY.md). One row per uploaded chunk; once all
+/// expected sequence numbers for a (sessionId, kind) are present, the
+/// completion endpoint concatenates them into a normal ProctoringRecording
+/// row and these staging rows are deleted — they never represent the final
+/// evidence artifact themselves.
+model ProctoringRecordingChunk {
+  id             String                  @id @default(cuid())
+  sessionId      String
+  session        ProctoringSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind           ProctoringRecordingKind
+  sequenceNumber Int
+  sha256         String
+  sizeBytes      Int
+  storageKey     String
+  receivedAt     DateTime                @default(now())
+
+  @@unique([sessionId, kind, sequenceNumber])
+  @@index([sessionId, kind])
 }
 
 model StudentSession {

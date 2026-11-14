@@ -6,7 +6,7 @@ import {
   ensureAssessorReviewStub,
   runAutoAssessmentForSubmission,
 } from "../lib/runAutoAssessment.js";
-import { runPracticalTests } from "../lib/practicalRunner.js";
+import { runInSandbox } from "../lib/sandboxRunner.js";
 import {
   ensurePracticalWorkspace,
   filesToSnapshot,
@@ -92,9 +92,11 @@ practicalStudentRouter.get("/", async (req: AuthedRequest, res) => {
 });
 
 /**
- * Runs the exam's test cases against the student's CURRENT workspace
- * files and returns the report directly — an ephemeral "practice run" the
- * student can use as often as they like while working. Never persists a
+ * Runs ONLY the exam's PUBLIC (isHidden=false) test cases against the
+ * student's CURRENT workspace files and returns the report directly — an
+ * ephemeral "practice run" the student can use as often as they like while
+ * working. Hidden test cases never run and never appear in this response —
+ * not their label, not their count, nothing. Never persists a
  * PracticalSubmission or PracticalAutoAssessment row and never affects the
  * assignment's status/lock/final score — only POST /submit does that.
  */
@@ -114,16 +116,22 @@ practicalStudentRouter.post("/run-tests", async (req: AuthedRequest, res) => {
     where: { id: gate.assignment.examId },
     include: { practicalTests: { orderBy: { sortOrder: "asc" } } },
   });
-
   if (exam.practicalTests.length === 0) {
     res.json({ results: [], earnedPoints: 0, maxPoints: 0, scorePercent: 0, note: "No test cases defined for this exam." });
     return;
   }
 
+  const publicTests = exam.practicalTests.filter((t) => !t.isHidden);
+
+  if (publicTests.length === 0) {
+    res.json({ results: [], earnedPoints: 0, maxPoints: 0, scorePercent: 0, note: "No public sample test cases defined for this exam." });
+    return;
+  }
+
   const files = full.files.map((f) => ({ filename: f.filename, content: f.content }));
-  const report = runPracticalTests(
+  const report = await runInSandbox(
     files,
-    exam.practicalTests.map((t) => ({
+    publicTests.map((t) => ({
       id: t.id,
       label: t.label,
       kind: t.kind,

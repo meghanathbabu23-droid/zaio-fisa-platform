@@ -12,6 +12,13 @@ import {
   MIN_VERIFIED_REAL_BYTES,
   webcamStatusAfterUpload,
 } from "../lib/recordingVerify.js";
+import {
+  completeRecording,
+  computeRecordingUploadStatus,
+  MAX_CHUNK_BYTES,
+  receivedSequenceNumbers,
+  receiveChunk,
+} from "../lib/recordingChunks.js";
 
 export const proctoringStudentRouter = Router();
 export const proctoringAdminRouter = Router();
@@ -232,6 +239,164 @@ proctoringStudentRouter.post("/sessions/:sessionId/recordings", async (req: Auth
   });
 });
 
+function parseKind(raw: unknown): ProctoringRecordingKind | null {
+  return raw === "WEBCAM_MIC" || raw === "SCREEN" ? raw : null;
+}
+
+/**
+ * Incremental, resumable chunk upload — the client calls this once per
+ * ~4s MediaRecorder chunk instead of holding the whole recording in memory
+ * until the end. Idempotent: a retried chunk with identical bytes is a safe
+ * no-op (see receiveChunk's CHUNK_CONFLICT vs alreadyReceived distinction).
+ * The old single-shot POST /sessions/:sessionId/recordings endpoint above is
+ * unchanged and still fully functional — this is an additive path, not a
+ * replacement.
+ */
+proctoringStudentRouter.post("/sessions/:sessionId/recordings/chunks", async (req: AuthedRequest, res) => {
+  const { kind: rawKind, sequenceNumber, sha256, dataBase64 } = req.body as {
+    kind?: string;
+    sequenceNumber?: number;
+    sha256?: string;
+    dataBase64?: string;
+  };
+  const kind = parseKind(rawKind);
+  if (!kind) {
+    res.status(400).json({ error: "kind must be WEBCAM_MIC or SCREEN" });
+    return;
+  }
+  if (typeof sequenceNumber !== "number" || typeof sha256 !== "string" || typeof dataBase64 !== "string") {
+    res.status(400).json({ error: "sequenceNumber, sha256 and dataBase64 required" });
+    return;
+  }
+
+  const session = await prisma.proctoringSession.findFirst({
+    where: { id: req.params.sessionId, studentId: req.studentId! },
+  });
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(dataBase64, "base64");
+  } catch {
+    res.status(400).json({ error: "Invalid base64" });
+    return;
+  }
+
+  const result = await receiveChunk({
+    sessionId: session.id,
+    kind,
+    sequenceNumber,
+    claimedSha256: sha256,
+    buffer,
+  });
+
+  if (!result.ok) {
+    const status = result.error === "CHUNK_CONFLICT" ? 409 : 400;
+    res.status(status).json({ error: result.error, maxChunkBytes: MAX_CHUNK_BYTES });
+    return;
+  }
+  res.status(201).json({ sequenceNumber, alreadyReceived: result.alreadyReceived });
+});
+
+/**
+ * Verifies every expected sequence number is present, assembles the final
+ * recording, and persists it through the exact same path the old
+ * single-shot endpoint used (saveRecordingFile + ProctoringRecording) — the
+ * resulting artifact is indistinguishable from one produced the old way, so
+ * evidence.ts's download route needs no changes.
+ */
+proctoringStudentRouter.post("/sessions/:sessionId/recordings/complete", async (req: AuthedRequest, res) => {
+  const { kind: rawKind, expectedChunkCount, finalSha256, mimeType } = req.body as {
+    kind?: string;
+    expectedChunkCount?: number;
+    finalSha256?: string;
+    mimeType?: string;
+  };
+  const kind = parseKind(rawKind);
+  if (!kind) {
+    res.status(400).json({ error: "kind must be WEBCAM_MIC or SCREEN" });
+    return;
+  }
+  if (typeof expectedChunkCount !== "number" || typeof mimeType !== "string") {
+    res.status(400).json({ error: "expectedChunkCount and mimeType required" });
+    return;
+  }
+
+  const session = await prisma.proctoringSession.findFirst({
+    where: { id: req.params.sessionId, studentId: req.studentId! },
+  });
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  const result = await completeRecording({
+    sessionId: session.id,
+    kind,
+    expectedChunkCount,
+    finalSha256: typeof finalSha256 === "string" ? finalSha256 : undefined,
+    mimeType,
+  });
+
+  if (!result.ok) {
+    if (result.error === "MISSING_CHUNKS") {
+      res.status(409).json({ error: result.error, missingSequenceNumbers: result.missingSequenceNumbers });
+      return;
+    }
+    res.status(400).json({ error: result.error });
+    return;
+  }
+
+  const statusField = kind === "WEBCAM_MIC" ? "webcamStatus" : "screenStatus";
+  await prisma.proctoringSession.update({
+    where: { id: session.id },
+    data: { [statusField]: webcamStatusAfterUpload(result.captureTier) },
+  });
+  await prisma.proctoringEvent.create({
+    data: {
+      sessionId: session.id,
+      type:
+        result.captureTier === ProctoringCaptureTier.VERIFIED_REAL
+          ? "RECORDING_UPLOAD_VERIFIED"
+          : "RECORDING_UPLOAD_UNVERIFIED",
+      message: `Stored ${result.sizeBytes} bytes via incremental upload (${expectedChunkCount} chunks).`,
+      advisory: true,
+    },
+  });
+
+  res.status(201).json({
+    id: result.recordingId,
+    filename: result.filename,
+    sizeBytes: result.sizeBytes,
+    captureTier: result.captureTier,
+    storedPath: recordingPath(session.id, result.filename),
+    verifiedReal: result.captureTier === ProctoringCaptureTier.VERIFIED_REAL,
+    note: "Demo disk storage — not a certified proctoring vault.",
+  });
+});
+
+/** Lets the client know which sequence numbers the server already has, so a
+ * resumed session (after refresh/browser restart) doesn't re-upload them. */
+proctoringStudentRouter.get("/sessions/:sessionId/recordings/:kind/status", async (req: AuthedRequest, res) => {
+  const kind = parseKind(req.params.kind);
+  if (!kind) {
+    res.status(400).json({ error: "kind must be WEBCAM_MIC or SCREEN" });
+    return;
+  }
+  const session = await prisma.proctoringSession.findFirst({
+    where: { id: req.params.sessionId, studentId: req.studentId! },
+  });
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  const receivedSequenceNumbersList = await receivedSequenceNumbers(session.id, kind);
+  res.json({ receivedSequenceNumbers: receivedSequenceNumbersList });
+});
+
 proctoringAdminRouter.get("/sessions", async (req, res) => {
   const activeOnly = req.query.active === "true";
   const sessions = await prisma.proctoringSession.findMany({
@@ -241,6 +406,7 @@ proctoringAdminRouter.get("/sessions", async (req, res) => {
     include: {
       events: { orderBy: { createdAt: "desc" }, take: 5 },
       recordings: true,
+      recordingChunks: true,
       _count: { select: { events: true } },
     },
     orderBy: { updatedAt: "desc" },
@@ -266,6 +432,7 @@ proctoringAdminRouter.get("/sessions", async (req, res) => {
       status: s.status,
       webcamStatus: s.webcamStatus,
       screenStatus: s.screenStatus,
+      recordingUploadStatus: computeRecordingUploadStatus(s.recordings, s.recordingChunks),
       startedAt: s.startedAt.toISOString(),
       endedAt: s.endedAt?.toISOString() ?? null,
       eventCount: s._count.events,
@@ -293,6 +460,7 @@ proctoringAdminRouter.get("/sessions/:sessionId", async (req, res) => {
     include: {
       events: { orderBy: { createdAt: "asc" } },
       recordings: true,
+      recordingChunks: true,
     },
   });
   if (!session) {
@@ -303,5 +471,12 @@ proctoringAdminRouter.get("/sessions/:sessionId", async (req, res) => {
     where: { id: session.assignmentId },
     include: { student: true, exam: true },
   });
-  res.json({ session, assignment, simulatedDemo: true });
+  res.json({
+    session: {
+      ...session,
+      recordingUploadStatus: computeRecordingUploadStatus(session.recordings, session.recordingChunks),
+    },
+    assignment,
+    simulatedDemo: true,
+  });
 });

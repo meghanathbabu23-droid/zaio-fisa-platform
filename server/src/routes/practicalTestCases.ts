@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { requireRole } from "../middleware/requireRole.js";
 import type { AuthedAdminRequest } from "../middleware/requireAdminAuth.js";
 import { recordAuditLog } from "../lib/auditLog.js";
+import { examHasAnyAssignment } from "../lib/examImmutability.js";
 
 export const practicalTestCasesRouter = Router({ mergeParams: true });
 // Practical test cases are effectively exam answer keys — ADMIN can read
@@ -12,13 +13,40 @@ export const practicalTestCasesRouter = Router({ mergeParams: true });
 const writeOnly = requireRole(AdminRole.SUPER_ADMIN);
 
 const KINDS = new Set<string>(Object.values(PracticalTestKind));
+const DOM_ACTIONS = new Set(["fill", "click", "select", "check", "wait"]);
+const DOM_CONDITIONS = new Set(["exists", "notExists", "textContains", "hasClass", "attributeEquals", "countEquals"]);
+
+/** Validates the DOM_BEHAVIOR structured JSON shape stored in `expression`. */
+function isValidDomBehaviorSpec(raw: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const { steps, assert } = parsed as Record<string, unknown>;
+  if (!Array.isArray(steps)) return false;
+  for (const step of steps) {
+    if (!step || typeof step !== "object") return false;
+    const { action, selector } = step as Record<string, unknown>;
+    if (typeof action !== "string" || !DOM_ACTIONS.has(action)) return false;
+    if (action !== "wait" && typeof selector !== "string") return false;
+  }
+  if (!assert || typeof assert !== "object") return false;
+  const { selector, condition } = assert as Record<string, unknown>;
+  if (typeof selector !== "string" || typeof condition !== "string") return false;
+  if (!DOM_CONDITIONS.has(condition)) return false;
+  return true;
+}
 
 function parseTestBody(body: Record<string, unknown>) {
-  const { label, kind, targetFile, expression, points, sortOrder } = body;
+  const { label, kind, targetFile, expression, points, sortOrder, isHidden } = body;
   if (typeof label !== "string" || typeof kind !== "string" || typeof expression !== "string") {
     return null;
   }
   if (!label.trim() || !expression.trim() || !KINDS.has(kind)) return null;
+  if (kind === PracticalTestKind.DOM_BEHAVIOR && !isValidDomBehaviorSpec(expression.trim())) return null;
   const pts = typeof points === "number" ? Math.max(1, Math.floor(points)) : 1;
   const order = typeof sortOrder === "number" ? sortOrder : 0;
   const file =
@@ -34,6 +62,9 @@ function parseTestBody(body: Record<string, unknown>) {
     expression: expression.trim(),
     points: pts,
     sortOrder: order,
+    // Hidden by default — an admin must explicitly opt a test case into
+    // being a public sample by sending isHidden: false.
+    isHidden: typeof isHidden === "boolean" ? isHidden : true,
   };
 }
 
@@ -64,6 +95,15 @@ practicalTestCasesRouter.post("/", writeOnly, async (req: AuthedAdminRequest, re
     res.status(404).json({ error: "Practical exam not found" });
     return;
   }
+  // Adding a test case changes what every assigned student is graded
+  // against — once any student has been assigned this exam, its test
+  // cases must stay exactly as they were. See examImmutability.ts.
+  if (await examHasAnyAssignment(exam.id)) {
+    res.status(409).json({
+      error: "Cannot add a test case: this exam already has at least one student assignment. Archive it and create a new exam instead.",
+    });
+    return;
+  }
   const count = await prisma.practicalTestCase.count({ where: { examId: exam.id } });
   const row = await prisma.practicalTestCase.create({
     data: { examId: exam.id, ...data, sortOrder: data.sortOrder || count },
@@ -81,6 +121,17 @@ practicalTestCasesRouter.put("/:testId", writeOnly, async (req: AuthedAdminReque
   const data = parseTestBody(req.body);
   if (!data) {
     res.status(400).json({ error: "Invalid test case" });
+    return;
+  }
+  const existing = await prisma.practicalTestCase.findUnique({ where: { id: req.params.testId } });
+  if (!existing) {
+    res.status(404).json({ error: "Test case not found" });
+    return;
+  }
+  if (await examHasAnyAssignment(existing.examId)) {
+    res.status(409).json({
+      error: "Cannot edit this test case: its exam already has at least one student assignment. Archive it and create a new exam instead.",
+    });
     return;
   }
   try {
@@ -101,6 +152,17 @@ practicalTestCasesRouter.put("/:testId", writeOnly, async (req: AuthedAdminReque
 });
 
 practicalTestCasesRouter.delete("/:testId", writeOnly, async (req: AuthedAdminRequest, res) => {
+  const existing = await prisma.practicalTestCase.findUnique({ where: { id: req.params.testId } });
+  if (!existing) {
+    res.status(404).json({ error: "Test case not found" });
+    return;
+  }
+  if (await examHasAnyAssignment(existing.examId)) {
+    res.status(409).json({
+      error: "Cannot delete this test case: its exam already has at least one student assignment. Archive it and create a new exam instead.",
+    });
+    return;
+  }
   try {
     await prisma.practicalTestCase.delete({ where: { id: req.params.testId } });
     await recordAuditLog({

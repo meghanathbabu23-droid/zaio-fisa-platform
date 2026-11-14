@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { otpConfig } from "../otpConfig.js";
 import type { OtpDeliveryErrorCategory } from "./deliveryErrors.js";
 
@@ -36,13 +37,18 @@ function renderOtpEmail(code: string, expiresAt: Date) {
 function classifyResendError(error: { statusCode: number | null; name: string } | undefined): OtpDeliveryErrorCategory {
   const name = error?.name ?? "";
   const status = error?.statusCode ?? null;
-  if (status === 401 || status === 403 || name.includes("api_key") || name === "restricted_api_key") {
+  // 401 is always a genuine credential failure. 403 is ambiguous on Resend:
+  // it covers both a permission-scoped/restricted API key AND the sandbox
+  // "no verified domain — can only send to your own account email"
+  // restriction, which is a recipient problem, not a credential one.
+  // `name` disambiguates — checked before the blanket 403 case below.
+  if (status === 401 || name.includes("api_key") || name === "restricted_api_key") {
     return "AUTH_ERROR";
   }
   if (status === 429 || name === "rate_limit_exceeded") {
     return "RATE_LIMITED";
   }
-  if (status === 422 || name === "validation_error" || name === "invalid_parameter" || name === "invalid_to_address") {
+  if (status === 403 || status === 422 || name === "validation_error" || name === "invalid_parameter" || name === "invalid_to_address") {
     return "INVALID_RECIPIENT";
   }
   return "UNKNOWN";
@@ -100,6 +106,80 @@ export class ResendEmailProvider implements EmailProvider {
       return { ok: true };
     } catch {
       return { ok: false, category: "NETWORK_ERROR" };
+    }
+  }
+}
+
+/**
+ * Classifies a Gmail SMTP (nodemailer) error using only its structured
+ * `code`/`responseCode` fields — never `.message` or `.response`, either of
+ * which can embed the recipient address or other SMTP conversation detail.
+ */
+function classifySmtpError(error: { code?: string; responseCode?: number } | undefined): OtpDeliveryErrorCategory {
+  const code = error?.code ?? "";
+  const responseCode = error?.responseCode ?? null;
+
+  if (code === "EAUTH" || responseCode === 535) {
+    return "AUTH_ERROR";
+  }
+  if (responseCode === 421 || responseCode === 450 || responseCode === 452) {
+    return "RATE_LIMITED";
+  }
+  if (code === "EENVELOPE" || responseCode === 550 || responseCode === 551 || responseCode === 553) {
+    return "INVALID_RECIPIENT";
+  }
+  if (code === "ECONNECTION" || code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ESOCKET" || code === "EDNS") {
+    return "NETWORK_ERROR";
+  }
+  return "UNKNOWN";
+}
+
+type MailTransporterLike = { sendMail: (options: Record<string, unknown>) => Promise<unknown> };
+
+/**
+ * Real Gmail SMTP delivery via Nodemailer — an alternative to Resend for
+ * environments where a verified sending domain isn't available yet (e.g. a
+ * standalone demo). Authenticates as a real Gmail account using an App
+ * Password (never the account's login password). Selected only when
+ * EMAIL_PROVIDER=gmail_smtp and OTP_DELIVERY_MODE=live — see
+ * providers/index.ts.
+ */
+export class GmailSmtpEmailProvider implements EmailProvider {
+  private transporter: MailTransporterLike;
+
+  /** `transporter` param exists purely so tests can inject a stub instead of
+   * a real SMTP connection — never used by application code. */
+  constructor(transporter?: MailTransporterLike) {
+    this.transporter =
+      transporter ??
+      nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        requireTLS: true,
+        auth: { user: otpConfig.gmailSmtp.user, pass: otpConfig.gmailSmtp.appPassword },
+      });
+  }
+
+  async sendOtpEmail(to: string, code: string, expiresAt: Date): Promise<DeliveryResult> {
+    const { subject, text, html } = renderOtpEmail(code, expiresAt);
+    try {
+      await this.transporter.sendMail({ from: `"Zaio FISA" <${otpConfig.gmailSmtp.user}>`, to, subject, text, html });
+      return { ok: true };
+    } catch (err) {
+      // Never inspects err.message/err.response — both can carry the
+      // recipient address in SMTP reject text. Classification uses only
+      // the structured code/responseCode fields nodemailer attaches.
+      return { ok: false, category: classifySmtpError(err as { code?: string; responseCode?: number }) };
+    }
+  }
+
+  async sendEmail(to: string, subject: string, text: string, html: string): Promise<DeliveryResult> {
+    try {
+      await this.transporter.sendMail({ from: `"Zaio FISA" <${otpConfig.gmailSmtp.user}>`, to, subject, text, html });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, category: classifySmtpError(err as { code?: string; responseCode?: number }) };
     }
   }
 }
