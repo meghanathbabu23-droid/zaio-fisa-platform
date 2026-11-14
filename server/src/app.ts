@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import { AdminRole } from "@prisma/client";
+import { prisma } from "./prisma.js";
 import { assessorRouter } from "./routes/assessor.js";
 import { assignmentsRouter } from "./routes/assignments.js";
 import { authRouter } from "./routes/auth.js";
@@ -76,6 +77,27 @@ app.use(express.json({ limit: "1mb" }));
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 }); // exempt: public by design
+
+/**
+ * Readiness check, distinct from /api/health above: that one never touches
+ * the database, so it can't tell you whether the live DB connection
+ * actually works. This runs a trivial read via the ordinary Prisma query
+ * API (not $runCommandRaw) so the exact same code works against both the
+ * MongoDB-generated client (production) and the SQLite-generated client
+ * (local dev/tests) — no DB_PROVIDER branch needed. Never throws past this
+ * handler and never includes the caught error (which could carry
+ * connection-string/host detail) in the response or a log line.
+ */
+app.get("/api/health/ready", async (_req, res) => {
+  try {
+    await prisma.administrator.count();
+    res.json({ ok: true, database: "connected" });
+  } catch {
+    // eslint-disable-next-line no-console
+    console.error("[health] database readiness check failed");
+    res.status(503).json({ ok: false, database: "unavailable" });
+  }
+}); // exempt: public by design — read-only connectivity probe, returns no data
 
 // ——— Exempt: public student-facing auth/portal routes ———
 app.use("/api/auth", authRouter); // exempt: OTP request/verify/logout must stay public
