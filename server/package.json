@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "heroku-postbuild": "prisma generate --schema=prisma-production/schema.production.prisma && npm run build",
+    "heroku-postbuild": "prisma generate --schema=prisma/schema.mongodb.prisma && npm run build",
     "render-build": "prisma generate --schema=prisma/schema.mongodb.prisma && npm run build",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
