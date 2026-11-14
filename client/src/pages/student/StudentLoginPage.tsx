@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { registerTester, requestOtp, verifyOtp } from "../../api";
-import { setStudentToken } from "../../student/session";
+import { setStudentId, setStudentToken } from "../../student/session";
 import { AuthShell } from "../../components/ui/AuthShell";
 import { Button } from "../../components/ui/Button";
 import { StateBanner } from "../../components/ui/StateBanner";
-import type { OtpChannel } from "../../types";
 
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -13,16 +12,19 @@ function formatCountdown(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Student OTP sign-in is email-only — the API's `channel` parameter stays
+ * generic (shared with the register-tester flow's phone field and the
+ * underlying OtpChannel schema enum), but this page only ever sends "email". */
 export function StudentLoginPage() {
   const navigate = useNavigate();
-  const [channel, setChannel] = useState<OtpChannel>("email");
-  const [value, setValue] = useState("");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"identity" | "otp" | "register">("identity");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resendReadyAt, setResendReadyAt] = useState<number | null>(null);
   const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
+  const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [registerNotice, setRegisterNotice] = useState<string | null>(null);
   const [regFullName, setRegFullName] = useState("");
@@ -39,24 +41,19 @@ export function StudentLoginPage() {
   const expiryRemaining = expiresAtMs ? Math.max(0, Math.floor((expiresAtMs - now) / 1000)) : 0;
   const expired = step === "otp" && expiresAtMs !== null && expiryRemaining === 0;
 
-  function switchChannel(next: OtpChannel) {
-    setChannel(next);
-    setValue("");
-    setError(null);
-  }
-
   async function sendOtp(e: React.FormEvent) {
     e.preventDefault();
-    if (!value.trim()) {
-      setError(channel === "email" ? "Enter your registered Zaio email." : "Enter your registered phone number.");
+    if (!email.trim()) {
+      setError("Enter your registered Zaio email.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await requestOtp(channel, value.trim());
+      const res = await requestOtp("email", email.trim());
       setResendReadyAt(Date.now() + res.cooldownSeconds * 1000);
       setExpiresAtMs(new Date(res.expiresAt).getTime());
+      setRequestMessage(res.message);
       setStep("otp");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -70,9 +67,10 @@ export function StudentLoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await requestOtp(channel, value.trim());
+      const res = await requestOtp("email", email.trim());
       setResendReadyAt(Date.now() + res.cooldownSeconds * 1000);
       setExpiresAtMs(new Date(res.expiresAt).getTime());
+      setRequestMessage(res.message);
       setCode("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -86,8 +84,9 @@ export function StudentLoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await verifyOtp(channel, value.trim(), code.trim());
+      const res = await verifyOtp("email", email.trim(), code.trim());
       setStudentToken(res.token);
+      setStudentId(res.student.id);
       navigate("/student");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
@@ -102,6 +101,7 @@ export function StudentLoginPage() {
     setError(null);
     setResendReadyAt(null);
     setExpiresAtMs(null);
+    setRequestMessage(null);
   }
 
   function openRegister() {
@@ -120,8 +120,7 @@ export function StudentLoginPage() {
     setError(null);
     try {
       const res = await registerTester(regFullName.trim(), regEmail.trim(), regPhone.trim());
-      setChannel("email");
-      setValue(res.student.email);
+      setEmail(res.student.email);
       setRegisterNotice(
         res.reused
           ? "That email/mobile is already registered to an existing tester record — request your code below."
@@ -141,41 +140,21 @@ export function StudentLoginPage() {
       <p className="mt-1 text-sm text-zaio-ink/60">One-time code · single use · 10 minute expiry</p>
       {step === "identity" ? (
         <form onSubmit={sendOtp} className="mt-6 space-y-4">
-          <div className="flex gap-2 rounded-lg bg-zaio-paper p-1">
-            <button
-              type="button"
-              onClick={() => switchChannel("email")}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                channel === "email" ? "bg-white text-zaio-ink shadow-sm" : "text-zaio-ink/60"
-              }`}
-            >
-              Email
-            </button>
-            <button
-              type="button"
-              onClick={() => switchChannel("phone")}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                channel === "phone" ? "bg-white text-zaio-ink shadow-sm" : "text-zaio-ink/60"
-              }`}
-            >
-              Phone
-            </button>
-          </div>
           <label className="block text-sm">
-            {channel === "email" ? "Zaio email" : "Phone number"}
+            Zaio email
             <input
               className="input mt-1"
-              type={channel === "email" ? "email" : "tel"}
-              placeholder={channel === "email" ? "name@zaio.io" : "082 111 0001"}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              autoComplete={channel === "email" ? "email" : "tel"}
+              type="email"
+              placeholder="name@zaio.io"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
             />
           </label>
           {registerNotice ? <StateBanner tone="success">{registerNotice}</StateBanner> : null}
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
           <Button type="submit" disabled={loading} fullWidth>
-            {loading ? "Sending…" : `Send code via ${channel === "email" ? "email" : "SMS"}`}
+            {loading ? "Sending…" : "Send OTP to Email"}
           </Button>
           <Button type="button" variant="ghost" fullWidth onClick={openRegister}>
             New tester? Register here
@@ -236,8 +215,9 @@ export function StudentLoginPage() {
       ) : (
         <form onSubmit={confirmOtp} className="mt-6 space-y-4">
           <StateBanner tone="info">
-            We sent a 6-digit code to your {channel === "email" ? "email" : "phone"}. Check{" "}
-            {channel === "email" ? "your inbox (and spam folder)" : "your messages"}.
+            {requestMessage ?? "If that email is registered, a verification code has been sent."} Check your
+            inbox (and spam folder) over the next few minutes — this message does not confirm delivery
+            succeeded, only that the request was accepted.
           </StateBanner>
           <label className="block text-sm">
             Enter code
@@ -265,7 +245,7 @@ export function StudentLoginPage() {
             {cooldownRemaining > 0 ? `Resend code in ${cooldownRemaining}s` : "Resend code"}
           </Button>
           <Button type="button" variant="ghost" fullWidth onClick={useDifferentIdentity}>
-            Use a different email/phone
+            Use a different email
           </Button>
         </form>
       )}

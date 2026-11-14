@@ -81,7 +81,7 @@ export function McqExamPage() {
   if (result) {
     return (
       <div className="mx-auto max-w-xl p-8">
-        <div className="rounded-2xl border border-zaio-cloud bg-white p-8 text-center shadow-sm">
+        <div className="rounded-2xl border border-zaio-cloud bg-zaio-card p-8 text-center shadow-sm">
           <p className="font-display text-2xl font-semibold text-zaio-ink">Exam submitted</p>
           <p className="mt-2 text-zaio-ink/70">
             Auto-marked: {result.correct}/{result.total} ({result.scorePercent.toFixed(0)}%)
@@ -102,7 +102,7 @@ export function McqExamPage() {
 
   return (
     <div className="min-h-screen bg-zaio-paper pb-12">
-      <div className="sticky top-0 z-10 border-b border-zaio-cloud bg-white px-6 py-3 shadow-sm">
+      <div className="sticky top-0 z-10 border-b border-zaio-cloud bg-zaio-card px-6 py-3 shadow-sm">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <p className="font-display font-semibold text-zaio-ink">{title || "MCQ exam"}</p>
           <p
@@ -114,7 +114,7 @@ export function McqExamPage() {
       </div>
       <main className="mx-auto max-w-3xl space-y-6 p-6">
         {instructions ? (
-          <div className="rounded-2xl border border-zaio-cloud bg-white p-5 text-sm text-zaio-ink/80 shadow-sm whitespace-pre-line">
+          <div className="rounded-2xl border border-zaio-cloud bg-zaio-card p-5 text-sm text-zaio-ink/80 shadow-sm whitespace-pre-line">
             {instructions}
           </div>
         ) : null}
@@ -167,7 +167,7 @@ export function McqExamPage() {
         {q ? (
           <fieldset
             key={q.id}
-            className="rounded-2xl border border-zaio-cloud bg-white p-5 shadow-sm"
+            className="rounded-2xl border border-zaio-cloud bg-zaio-card p-5 shadow-sm"
           >
             <legend className="font-medium text-zaio-ink">
               {currentIndex + 1}. {q.prompt}

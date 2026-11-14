@@ -37,6 +37,7 @@ export interface McqQuestionInput {
   prompt: string;
   options: string[];
   correctIndex: number;
+  marks: number;
 }
 
 export interface McqQuestion extends McqQuestionInput {
@@ -54,11 +55,13 @@ export interface Exam {
   /** False for an obsolete/duplicate/QA-audit exam hidden from the active
    * exam-assignment picker — never deleted, existing assignments unaffected. */
   isActive: boolean;
+  totalMarks: number | null;
   cohortId: string | null;
   cohort?: Cohort | null;
   createdAt: string;
   updatedAt: string;
   questions?: McqQuestion[];
+  practicalTests?: PracticalTestCase[];
   _count?: { questions: number; assignments: number; practicalTests?: number };
 }
 
@@ -67,7 +70,29 @@ export type PracticalTestKind =
   | "CSS_CONTAINS"
   | "JS_CONTAINS"
   | "HTML_SELECTOR"
-  | "FILE_REGEX";
+  | "FILE_REGEX"
+  | "DOM_BEHAVIOR";
+
+export type DomBehaviorAction = "fill" | "click" | "select" | "check" | "wait";
+export type DomBehaviorCondition =
+  | "exists"
+  | "notExists"
+  | "textContains"
+  | "hasClass"
+  | "attributeEquals"
+  | "countEquals";
+
+export interface DomBehaviorStep {
+  action: DomBehaviorAction;
+  selector?: string;
+  value?: string;
+  ms?: number;
+}
+
+export interface DomBehaviorSpec {
+  steps: DomBehaviorStep[];
+  assert: { selector: string; condition: DomBehaviorCondition; value?: string };
+}
 
 export interface PracticalTestCase {
   id: string;
@@ -78,6 +103,9 @@ export interface PracticalTestCase {
   expression: string;
   points: number;
   sortOrder: number;
+  /** True (default) = private/hidden evaluation case, never shown to or
+   * run for a student's practice run. False = a public sample test case. */
+  isHidden: boolean;
 }
 
 export type TestCaseResult = {
@@ -331,7 +359,47 @@ export interface ExamInput {
   instructions: string;
   cohortId: string | null;
   questions: McqQuestionInput[];
+  totalMarks: number;
 }
+
+export type Difficulty = "EASY" | "MEDIUM" | "HARD";
+export type DifficultySplit = { EASY: number; MEDIUM: number; HARD: number };
+
+/** Sent to POST /api/exams/generate — mirrors the server's GenerationConfig
+ * exactly (server/src/lib/questionGenerator.ts). */
+export interface GenerationRequest {
+  type: ExamType;
+  title: string;
+  topics: string[];
+  count: number;
+  difficulty: DifficultySplit;
+  totalMarks: number;
+  durationMinutes: number;
+  cohortId: string | null;
+  publicWeightPct?: number;
+}
+
+export interface GenerationUnresolvedSlot {
+  topic: string;
+  difficulty: Difficulty;
+}
+
+/** Discriminated result from generateExamQuestions() — never thrown, so the
+ * UI can branch on each distinct outcome (success, validation error, AI not
+ * configured, already running, insufficient uniqueness, other failure). */
+export type GenerationOutcome =
+  | {
+      kind: "success";
+      jobId: string;
+      exam: Exam;
+      topicCoverage: Record<string, number>;
+      difficultyDistribution: Record<string, number>;
+    }
+  | { kind: "invalid"; error: string }
+  | { kind: "not_configured"; error: string }
+  | { kind: "locked"; error: string }
+  | { kind: "insufficient_uniqueness"; error: string; unresolvedSlots: GenerationUnresolvedSlot[] }
+  | { kind: "server_error"; error: string };
 
 export type AssignmentStatus = "ASSIGNED" | "IN_PROGRESS" | "SUBMITTED";
 
@@ -395,7 +463,10 @@ export interface OtpRequestResponse {
   cooldownSeconds: number;
 }
 
-export type OtpChannel = "email" | "phone";
+/** Student OTP sign-in is email-only; "email" is the only value any caller
+ * constructs today. Kept as its own type (rather than inlining `"email"`
+ * at the two call sites) since it mirrors the server's OtpChannel enum. */
+export type OtpChannel = "email";
 
 export interface McqExamView {
   title: string;

@@ -67,7 +67,7 @@ export function AssignmentsPage() {
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
         <div className="grid gap-4 lg:grid-cols-2">
           <form
-            className="rounded-xl border border-zaio-cloud bg-white p-5 shadow-sm"
+            className="rounded-xl border border-zaio-cloud bg-zaio-card p-5 shadow-sm"
             onSubmit={async (e) => {
               e.preventDefault();
               setError(null);
@@ -105,7 +105,7 @@ export function AssignmentsPage() {
             </Button>
           </form>
           <form
-            className="rounded-xl border border-zaio-cloud bg-white p-5 shadow-sm"
+            className="rounded-xl border border-zaio-cloud bg-zaio-card p-5 shadow-sm"
             onSubmit={async (e) => {
               e.preventDefault();
               setError(null);
@@ -147,7 +147,7 @@ export function AssignmentsPage() {
             </Button>
           </form>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/60">Loading…</p>
           ) : (

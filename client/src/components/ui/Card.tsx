@@ -15,7 +15,7 @@ export function Card({
   const bar = accent === "sun" ? "bg-zaio-sun" : accent === "ink" ? "bg-zaio-ink" : "bg-zaio-blue";
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-zaio-cloud bg-white p-5 shadow-sm transition-shadow ${
+      className={`relative overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card p-5 shadow-sm transition-shadow ${
         interactive ? "hover:shadow-md" : ""
       } ${className}`}
     >

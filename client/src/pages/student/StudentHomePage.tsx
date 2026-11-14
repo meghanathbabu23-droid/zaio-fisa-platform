@@ -38,26 +38,26 @@ export function StudentHomePage() {
 
   return (
     <div className="min-h-screen bg-zaio-paper">
-      <header className="border-b border-zaio-cloud bg-white px-6 py-4">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Logo />
-            <div className="border-l border-zaio-cloud pl-4">
-              <p className="font-display text-lg font-semibold text-zaio-ink">My exams</p>
-              <p className="text-xs text-zaio-ink/50">Zaio FISA student portal</p>
-            </div>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zaio-cloud bg-zaio-card px-6 py-4">
+        <div className="flex items-center gap-4">
+          <Logo />
+          <div className="border-l border-zaio-cloud pl-4">
+            <p className="font-display text-sm font-semibold uppercase tracking-wide text-zaio-ink">
+              Zaio Institute of Technology
+            </p>
+            <p className="text-xs text-zaio-ink/50">FISA student portal · My exams</p>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={async () => {
-              await logoutStudent();
-              window.location.href = "/student/login";
-            }}
-          >
-            Sign out
-          </Button>
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={async () => {
+            await logoutStudent();
+            window.location.href = "/student/login";
+          }}
+        >
+          Sign out
+        </Button>
       </header>
       <main className="mx-auto max-w-3xl space-y-4 p-6">
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
@@ -67,7 +67,7 @@ export function StudentHomePage() {
           <EmptyState>No exam assignments yet. Ask your facilitator to assign an exam.</EmptyState>
         ) : (
           assignments.map((a) => (
-            <article key={a.id} className="rounded-xl border border-zaio-cloud bg-white p-5 shadow-sm">
+            <article key={a.id} className="rounded-xl border border-zaio-cloud bg-zaio-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h2 className="font-display font-semibold text-zaio-ink">{a.exam?.title}</h2>

@@ -8,6 +8,7 @@ export type PracticalExamInput = {
   durationMinutes: number;
   instructions: string;
   cohortId: string | null;
+  totalMarks: number;
 };
 
 export function PracticalExamFormModal({
@@ -27,15 +28,17 @@ export function PracticalExamFormModal({
     "Build the required page using HTML, CSS and JavaScript. Work autosaves. Submit when finished."
   );
   const [cohortId, setCohortId] = useState<string>("");
+  const [totalMarks, setTotalMarks] = useState(100);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || totalMarks < 1) return;
     onSave({
       title: title.trim(),
       durationMinutes,
       instructions: instructions.trim(),
       cohortId: cohortId || null,
+      totalMarks,
     });
   }
 
@@ -54,6 +57,16 @@ export function PracticalExamFormModal({
               className="input mt-1"
               value={durationMinutes}
               onChange={(e) => setDurationMinutes(Number(e.target.value))}
+            />
+          </label>
+          <label className="block text-sm">
+            Total marks
+            <input
+              type="number"
+              min={1}
+              className="input mt-1"
+              value={totalMarks}
+              onChange={(e) => setTotalMarks(Number(e.target.value))}
             />
           </label>
           <label className="block text-sm">

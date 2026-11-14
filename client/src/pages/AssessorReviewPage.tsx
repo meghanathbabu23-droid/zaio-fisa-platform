@@ -68,7 +68,7 @@ export function AssessorReviewPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zaio-paper">
-      <header className="border-b border-zaio-cloud bg-white px-6 py-4">
+      <header className="border-b border-zaio-cloud bg-zaio-card px-6 py-4">
         <Link to="/assessor/practical" className="text-sm text-zaio-blue">
           ← Dashboard
         </Link>
@@ -188,7 +188,7 @@ export function AssessorReviewPage() {
               </button>
             ))}
           </div>
-          <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-zaio-ink p-4 text-xs text-zaio-paper">
+          <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-zaio-paper p-4 text-xs text-zaio-ink">
             {fileContent}
           </pre>
         </Card>

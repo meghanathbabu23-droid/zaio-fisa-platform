@@ -26,21 +26,40 @@ beforeEach(() => {
 });
 
 describe("StudentLoginPage — email flow", () => {
-  it("defaults to the Email tab and sends a code when submitted", async () => {
+  it("shows only the email field and sends a code when submitted", async () => {
     const user = userEvent.setup();
     vi.mocked(api.requestOtp).mockResolvedValue({
       ok: true,
-      message: "If that email or phone is registered, a verification code has been sent.",
+      message: "If that email is registered, a verification code has been sent.",
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       cooldownSeconds: 60,
     });
     renderPage();
 
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
 
     await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith("email", "student@example.com"));
     expect(await screen.findByLabelText(/Enter code/i)).toBeInTheDocument();
+  });
+
+  it("shows the server's own non-committal message, never a hardcoded confident delivery claim (the API never confirms delivery actually succeeded)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.requestOtp).mockResolvedValue({
+      ok: true,
+      message: "If that email is registered, a verification code has been sent.",
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      cooldownSeconds: 60,
+    });
+    renderPage();
+    await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
+
+    await screen.findByLabelText(/Enter code/i);
+    expect(screen.getByText(/If that email is registered, a verification code has been sent\./i)).toBeInTheDocument();
+    // "We sent a 6-digit code" would wrongly assert delivery succeeded —
+    // the backend never guarantees that, even on its own success path.
+    expect(screen.queryByText(/^We sent a 6-digit code/i)).not.toBeInTheDocument();
   });
 
   it("never renders an OTP code anywhere on screen — only a generic confirmation", async () => {
@@ -53,7 +72,7 @@ describe("StudentLoginPage — email flow", () => {
     });
     renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
 
     await screen.findByLabelText(/Enter code/i);
     expect(screen.queryByText(/\b\d{6}\b/)).not.toBeInTheDocument();
@@ -73,7 +92,7 @@ describe("StudentLoginPage — email flow", () => {
     });
     renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
 
     const codeInput = await screen.findByLabelText(/Enter code/i);
     await user.type(codeInput, "123456");
@@ -84,8 +103,15 @@ describe("StudentLoginPage — email flow", () => {
   });
 });
 
-describe("StudentLoginPage — phone flow", () => {
-  it("switching to the Phone tab sends via the phone channel", async () => {
+describe("StudentLoginPage — phone login is unavailable", () => {
+  it("renders no phone/SMS tab or input anywhere on the identity step", async () => {
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Phone" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Phone number/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send code via sms/i })).not.toBeInTheDocument();
+  });
+
+  it("only ever requests the OTP via the email channel", async () => {
     const user = userEvent.setup();
     vi.mocked(api.requestOtp).mockResolvedValue({
       ok: true,
@@ -95,19 +121,11 @@ describe("StudentLoginPage — phone flow", () => {
     });
     renderPage();
 
-    await user.click(screen.getByRole("button", { name: "Phone" }));
-    await user.type(screen.getByLabelText(/Phone number/i), "+27821110001");
-    await user.click(screen.getByRole("button", { name: /send code via sms/i }));
-
-    await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith("phone", "+27821110001"));
-  });
-
-  it("switching tabs clears the identifier field", async () => {
-    const user = userEvent.setup();
-    renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: "Phone" }));
-    expect(screen.getByLabelText(/Phone number/i)).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
+
+    await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith("email", "student@example.com"));
+    expect(api.requestOtp).not.toHaveBeenCalledWith("phone", expect.anything());
   });
 });
 
@@ -122,7 +140,7 @@ describe("StudentLoginPage — resend cooldown", () => {
     });
     renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
 
     const resendButton = await screen.findByRole("button", { name: /resend code in \d+s/i });
     expect(resendButton).toBeDisabled();
@@ -135,7 +153,7 @@ describe("StudentLoginPage — error states", () => {
     vi.mocked(api.requestOtp).mockRejectedValue(new Error("Too many requests. Please wait and try again."));
     renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
 
     expect(await screen.findByText("Too many requests. Please wait and try again.")).toBeInTheDocument();
   });
@@ -143,7 +161,7 @@ describe("StudentLoginPage — error states", () => {
   it("shows a validation message when submitting with an empty identifier", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
     expect(await screen.findByText(/enter your registered zaio email/i)).toBeInTheDocument();
     expect(api.requestOtp).not.toHaveBeenCalled();
   });
@@ -159,7 +177,7 @@ describe("StudentLoginPage — error states", () => {
     vi.mocked(api.verifyOtp).mockRejectedValue(new Error("Invalid code. Please request a new one."));
     renderPage();
     await user.type(screen.getByLabelText(/Zaio email/i), "student@example.com");
-    await user.click(screen.getByRole("button", { name: /send code via email/i }));
+    await user.click(screen.getByRole("button", { name: /send otp to email/i }));
     const codeInput = await screen.findByLabelText(/Enter code/i);
     await user.type(codeInput, "000000");
     await user.click(screen.getByRole("button", { name: /verify & continue/i }));

@@ -1,3 +1,5 @@
+export type ChunkHandler = (sequenceNumber: number, blob: Blob) => void;
+
 type RecorderBag = {
   sessionId: string | null;
   webcamStream: MediaStream | null;
@@ -6,6 +8,8 @@ type RecorderBag = {
   screenRecorder: MediaRecorder | null;
   webcamChunks: Blob[];
   screenChunks: Blob[];
+  webcamSeq: number;
+  screenSeq: number;
 };
 
 let onProctoringSignal: ((type: string, message: string) => void) | null = null;
@@ -18,6 +22,8 @@ const bag: RecorderBag = {
   screenRecorder: null,
   webcamChunks: [],
   screenChunks: [],
+  webcamSeq: 0,
+  screenSeq: 0,
 };
 
 /** Client-side minimum before attempting upload (matches server tier logic). */
@@ -119,9 +125,18 @@ export function isScreenRecorderActive(): boolean {
   return bag.screenStream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
 }
 
-export async function startWebcamMicRecording(): Promise<void> {
+/**
+ * onChunk, when provided, receives every chunk with its sequence number
+ * instead of it being pushed into the in-memory webcamChunks array — this
+ * is what lets a caller persist/upload incrementally rather than holding
+ * the whole recording in memory. When omitted, behavior is byte-for-byte
+ * what it always was (array accumulation, consumed later by
+ * finalizeRecordings()) — existing callers are unaffected.
+ */
+export async function startWebcamMicRecording(onChunk?: ChunkHandler): Promise<void> {
   stopStreams();
   bag.webcamChunks = [];
+  bag.webcamSeq = 0;
   bag.webcamStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user", width: { ideal: 640 } },
     audio: true,
@@ -134,7 +149,13 @@ export async function startWebcamMicRecording(): Promise<void> {
   const mime = pickMime();
   bag.webcamRecorder = new MediaRecorder(bag.webcamStream, { mimeType: mime });
   bag.webcamRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) bag.webcamChunks.push(e.data);
+    if (e.data.size === 0) return;
+    if (onChunk) {
+      onChunk(bag.webcamSeq, e.data);
+      bag.webcamSeq += 1;
+    } else {
+      bag.webcamChunks.push(e.data);
+    }
   };
   bag.webcamRecorder.onerror = () => {
     signal("RECORDING_ERROR", "Webcam/mic MediaRecorder error (advisory).");
@@ -172,9 +193,10 @@ export async function testScreenCapture(): Promise<{
   }
 }
 
-export async function startScreenRecording(): Promise<boolean> {
+export async function startScreenRecording(onChunk?: ChunkHandler): Promise<boolean> {
   try {
     bag.screenChunks = [];
+    bag.screenSeq = 0;
     bag.screenStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: false,
@@ -188,7 +210,13 @@ export async function startScreenRecording(): Promise<boolean> {
     const mime = pickMime();
     bag.screenRecorder = new MediaRecorder(bag.screenStream, { mimeType: mime });
     bag.screenRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) bag.screenChunks.push(e.data);
+      if (e.data.size === 0) return;
+      if (onChunk) {
+        onChunk(bag.screenSeq, e.data);
+        bag.screenSeq += 1;
+      } else {
+        bag.screenChunks.push(e.data);
+      }
     };
     bag.screenRecorder.onerror = () => {
       signal("RECORDING_ERROR", "Screen MediaRecorder error (advisory).");

@@ -10,13 +10,24 @@ const defaultQuestions: McqQuestionInput[] = [
     prompt: "Which HTML element defines the main heading of a page?",
     options: ["<p>", "<h1>", "<head>", "<title>"],
     correctIndex: 1,
+    marks: 50,
   },
   {
     prompt: "Which property sets the background colour in CSS?",
     options: ["color", "font-size", "background-color", "margin"],
     correctIndex: 2,
+    marks: 50,
   },
 ];
+
+/** base = floor(total/count), remainder distributed one-each to the first
+ * `remainder` questions — matches server/src/lib/mcqMarks.ts exactly. */
+function autoDistributeMarks(questionCount: number, totalMarks: number): number[] {
+  if (questionCount <= 0) return [];
+  const base = Math.floor(totalMarks / questionCount);
+  const remainder = totalMarks % questionCount;
+  return Array.from({ length: questionCount }, (_, i) => base + (i < remainder ? 1 : 0));
+}
 
 export function ExamFormModal({
   title,
@@ -39,14 +50,30 @@ export function ExamFormModal({
   );
   const [validation, setValidation] = useState<string | null>(null);
 
+  const marksSum = questions.reduce((s, q) => s + (Number.isFinite(q.marks) ? q.marks : 0), 0);
+  const marksMatch = marksSum === form.totalMarks;
+
+  function applyAutoDistribute() {
+    const distributed = autoDistributeMarks(questions.length, form.totalMarks);
+    setQuestions(questions.map((q, i) => ({ ...q, marks: distributed[i] })));
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim() || form.durationMinutes < 1) {
       setValidation("Title and duration are required.");
       return;
     }
+    if (!Number.isInteger(form.totalMarks) || form.totalMarks < 1) {
+      setValidation("Total marks must be a positive whole number.");
+      return;
+    }
     if (questions.some((q) => !q.prompt.trim() || q.options.filter(Boolean).length < 2)) {
       setValidation("Each question needs a prompt and at least two options.");
+      return;
+    }
+    if (!marksMatch) {
+      setValidation(`Question marks sum to ${marksSum}, but total marks is ${form.totalMarks}. Use "Auto-distribute" or adjust manually.`);
       return;
     }
     setValidation(null);
@@ -59,6 +86,7 @@ export function ExamFormModal({
         prompt: q.prompt.trim(),
         options: q.options.map((o) => o.trim()).filter(Boolean),
         correctIndex: q.correctIndex,
+        marks: q.marks,
       })),
     });
   }
@@ -84,6 +112,16 @@ export function ExamFormModal({
                 className="input mt-1"
                 value={form.durationMinutes}
                 onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">Total marks</span>
+              <input
+                type="number"
+                min={1}
+                className="input mt-1"
+                value={form.totalMarks}
+                onChange={(e) => setForm({ ...form, totalMarks: Number(e.target.value) })}
               />
             </label>
             <label className="block text-sm">
@@ -113,31 +151,55 @@ export function ExamFormModal({
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-display text-sm font-semibold text-zaio-ink">MCQ questions</h3>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  setQuestions([
-                    ...questions,
-                    { prompt: "", options: ["", "", "", ""], correctIndex: 0 },
-                  ])
-                }
-              >
-                Add question
-              </Button>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${marksMatch ? "text-green-700" : "text-red-600"}`}>
+                  Marks: {marksSum} / {form.totalMarks}
+                </span>
+                <Button type="button" variant="ghost" onClick={applyAutoDistribute}>
+                  Auto-distribute
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    setQuestions([
+                      ...questions,
+                      { prompt: "", options: ["", "", "", ""], correctIndex: 0, marks: 0 },
+                    ])
+                  }
+                >
+                  Add question
+                </Button>
+              </div>
             </div>
             {questions.map((q, qi) => (
               <div key={qi} className="rounded-lg border border-zaio-cloud bg-zaio-paper/50 p-4">
-                <input
-                  className="input mb-2"
-                  placeholder={`Question ${qi + 1}`}
-                  value={q.prompt}
-                  onChange={(e) => {
-                    const next = [...questions];
-                    next[qi] = { ...q, prompt: e.target.value };
-                    setQuestions(next);
-                  }}
-                />
+                <div className="mb-2 flex items-center gap-2">
+                  <input
+                    className="input flex-1"
+                    placeholder={`Question ${qi + 1}`}
+                    value={q.prompt}
+                    onChange={(e) => {
+                      const next = [...questions];
+                      next[qi] = { ...q, prompt: e.target.value };
+                      setQuestions(next);
+                    }}
+                  />
+                  <label className="flex items-center gap-1 text-xs whitespace-nowrap">
+                    Marks
+                    <input
+                      type="number"
+                      min={0}
+                      className="input w-20"
+                      value={q.marks}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[qi] = { ...q, marks: Number(e.target.value) };
+                        setQuestions(next);
+                      }}
+                    />
+                  </label>
+                </div>
                 {q.options.map((opt, oi) => (
                   <div key={oi} className="mb-1 flex items-center gap-2">
                     <input

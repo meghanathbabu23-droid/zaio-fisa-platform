@@ -33,7 +33,7 @@ export function ProctoringMonitorPage() {
         description="Live demo sessions, recording metadata and advisory event logs. Flags never auto-sanction learners."
       />
       <div className="flex-1 space-y-4 p-8">
-        <p className="rounded-lg border border-dashed border-zaio-cloud bg-white px-4 py-2 text-xs text-zaio-ink/60">
+        <p className="rounded-lg border border-dashed border-zaio-cloud bg-zaio-card px-4 py-2 text-xs text-zaio-ink/60">
           Simulated storage: WebM files land under <code>server/data/recordings/</code> (gitignored).
           Not suitable for production evidence chains.
         </p>

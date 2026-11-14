@@ -17,7 +17,7 @@ export function AuthShell({ children, maxWidth = "max-w-md" }: { children: React
       <div className="relative mb-8">
         <Logo />
       </div>
-      <div className={`relative w-full ${maxWidth} rounded-2xl border border-zaio-cloud bg-white p-8 shadow-xl shadow-zaio-ink/5`}>
+      <div className={`relative w-full ${maxWidth} rounded-2xl border border-zaio-cloud bg-zaio-card p-8 shadow-xl shadow-zaio-paper/50`}>
         {children}
       </div>
     </div>

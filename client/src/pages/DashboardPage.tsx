@@ -74,7 +74,7 @@ export function DashboardPage() {
             accent="ink"
           />
         </div>
-        <section className="rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <section className="rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           <div className="flex items-center justify-between border-b border-zaio-cloud px-6 py-4">
             <h2 className="font-display text-lg font-semibold text-zaio-ink">Recent cohorts</h2>
             <Link
@@ -122,7 +122,7 @@ function CohortRow({ cohort, pinned }: { cohort: Cohort; pinned?: boolean }) {
     >
       <span>
         {pinned ? (
-          <span className="mr-2 rounded-full bg-zaio-sun px-2 py-0.5 text-xs font-semibold text-zaio-ink">
+          <span className="mr-2 rounded-full bg-zaio-sun px-2 py-0.5 text-xs font-semibold text-zaio-paper">
             Nov 14 demo
           </span>
         ) : null}

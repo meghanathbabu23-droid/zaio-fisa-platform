@@ -84,7 +84,7 @@ export function ResultsPage() {
         }
       />
       <div className="flex-1 space-y-6 p-8">
-        <div className="flex flex-wrap gap-3 rounded-xl border border-zaio-cloud bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap gap-3 rounded-xl border border-zaio-cloud bg-zaio-card p-4 shadow-sm">
           <FilterSelect
             label="Cohort"
             value={cohortId}
@@ -147,7 +147,7 @@ export function ResultsPage() {
 
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
 
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/50">Loading results…</p>
           ) : rows.length === 0 ? (

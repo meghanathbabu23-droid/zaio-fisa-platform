@@ -247,7 +247,7 @@ export function PracticalExamPage() {
 
   return (
     <div className="flex h-screen flex-col bg-zaio-paper">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zaio-cloud bg-white px-4 py-3">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zaio-cloud bg-zaio-card px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-display font-semibold text-zaio-ink">{title}</p>
           <p className="text-xs text-zaio-ink/50">{instructions}</p>
@@ -257,7 +257,7 @@ export function PracticalExamPage() {
             type="button"
             onClick={() => setShowInstructionsModal(true)}
             aria-label="View instructions and marking rubric"
-            className="flex items-center gap-1.5 rounded-xl border border-zaio-cloud bg-zaio-paper px-2.5 py-1.5 font-medium text-zaio-ink transition-colors hover:bg-white lg:hidden"
+            className="flex items-center gap-1.5 rounded-xl border border-zaio-cloud bg-zaio-paper px-2.5 py-1.5 font-medium text-zaio-ink transition-colors hover:bg-zaio-mist lg:hidden"
           >
             📋 Brief & Rubric
           </button>
@@ -466,7 +466,7 @@ export function PracticalExamPage() {
           <div className="space-y-4">
             <div className="rounded-lg bg-zaio-paper p-4 text-xs font-mono text-zaio-ink/70">
               <span className="font-semibold text-zaio-ink">Candidate Notice:</span> Code your solution in
-              the file explorer using <code className="bg-white px-1 py-0.5 rounded border border-zaio-cloud">index.html</code> and <code className="bg-white px-1 py-0.5 rounded border border-zaio-cloud">styles.css</code>. Autosave is enabled. All test cases run upon clicking Submit Final.
+              the file explorer using <code className="bg-zaio-card px-1 py-0.5 rounded border border-zaio-cloud">index.html</code> and <code className="bg-zaio-card px-1 py-0.5 rounded border border-zaio-cloud">styles.css</code>. Autosave is enabled. All test cases run upon clicking Submit Final.
             </div>
             <div className="whitespace-pre-line text-sm leading-relaxed text-zaio-ink/90 font-sans">
               {instructions}

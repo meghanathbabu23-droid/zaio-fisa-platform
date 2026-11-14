@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createExam, createPracticalExam, deleteExam, fetchCohorts, fetchExams, setExamActive } from "../api";
 import { ExamFormModal } from "../components/ExamFormModal";
+import { GenerateExamModal } from "../components/GenerateExamModal";
 import { PracticalExamFormModal } from "../components/PracticalExamFormModal";
 import { PracticalTestCasesModal } from "../components/PracticalTestCasesModal";
 import { PageHeader } from "../components/PageHeader";
@@ -16,6 +17,7 @@ const emptyExam: ExamInput = {
   instructions: "Answer all questions. The timer starts when you begin the exam.",
   cohortId: null,
   questions: [],
+  totalMarks: 100,
 };
 
 export function ExamsPage() {
@@ -25,6 +27,7 @@ export function ExamsPage() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [practicalOpen, setPracticalOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [testCasesExam, setTestCasesExam] = useState<{ id: string; title: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -81,8 +84,11 @@ export function ExamsPage() {
             <Button type="button" variant="secondary" onClick={() => setPracticalOpen(true)}>
               New practical
             </Button>
-            <Button type="button" onClick={() => setModalOpen(true)}>
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(true)}>
               New MCQ
+            </Button>
+            <Button type="button" variant="sun" onClick={() => setGenerateOpen(true)}>
+              Generate with AI
             </Button>
           </div>
         }
@@ -109,7 +115,7 @@ export function ExamsPage() {
             Archived ({archivedExams.length})
           </button>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/50">Loading…</p>
           ) : visibleExams.length === 0 ? (
@@ -221,6 +227,9 @@ export function ExamsPage() {
             load();
           }}
         />
+      ) : null}
+      {generateOpen ? (
+        <GenerateExamModal cohorts={cohorts} onClose={() => setGenerateOpen(false)} onGenerated={load} />
       ) : null}
     </>
   );

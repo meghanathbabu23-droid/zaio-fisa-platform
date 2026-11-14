@@ -106,7 +106,7 @@ export function AdminUsersPage() {
             {notice}
           </StateBanner>
         ) : null}
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/50">Loading…</p>
           ) : admins.length === 0 ? (

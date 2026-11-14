@@ -9,10 +9,9 @@ import {
   isScreenRecorderActive,
   isWebcamRecorderActive,
   setProctoringSessionId,
-  startScreenRecording,
-  startWebcamMicRecording,
   testScreenCapture,
 } from "../../student/proctoringRuntime";
+import { startScreenRecording, startWebcamMicRecording } from "../../student/proctoringHelpers";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { StateBanner } from "../../components/ui/StateBanner";

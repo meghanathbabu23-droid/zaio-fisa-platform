@@ -1,17 +1,25 @@
 @import "tailwindcss";
 
+/*
+ * Zaio Learn-inspired dark navy design system. Token NAMES are unchanged from
+ * the original light theme (so every component that already references them
+ * repaints automatically) — only their values move to the dark palette.
+ * Surface hierarchy, darkest to lightest: paper < sidebar < card < mist.
+ */
 @theme {
-  --color-zaio-blue: #2b2ecf;
-  --color-zaio-sun: #ffd400;
-  --color-zaio-ink: #101116;
-  --color-zaio-paper: #f9fafc;
-  --color-zaio-deep: #181c80;
-  --color-zaio-bright: #4860f8;
-  --color-zaio-sky: #acbdf3;
-  --color-zaio-mist: #e5eaf8;
-  --color-zaio-graphite: #313339;
-  --color-zaio-slate: #666970;
-  --color-zaio-cloud: #e5e7eb;
+  --color-zaio-blue: #3b82f6; /* primary accent */
+  --color-zaio-deep: #2563eb; /* accent hover/pressed shade */
+  --color-zaio-bright: #60a5fa; /* lighter accent tint */
+  --color-zaio-sky: #93c5fd; /* lightest accent tint */
+  --color-zaio-sun: #ffd400; /* secondary brand accent, unchanged */
+  --color-zaio-ink: #f8fafc; /* primary text (light-on-dark) */
+  --color-zaio-paper: #080f20; /* app background */
+  --color-zaio-sidebar: #111b30; /* sidebar / nav surface */
+  --color-zaio-card: #17243b; /* card / panel / modal surface */
+  --color-zaio-mist: #1e2b45; /* hover/active highlight, lighter than card */
+  --color-zaio-graphite: #cbd5e1; /* default nav/link text */
+  --color-zaio-slate: #94a3b8; /* secondary / muted text */
+  --color-zaio-cloud: #223049; /* subtle border */
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-sans: "Inter", system-ui, sans-serif;
 }
@@ -33,7 +41,7 @@ body {
   width: 100%;
   border-radius: 0.625rem;
   border: 1px solid var(--color-zaio-cloud);
-  background: #ffffff;
+  background: var(--color-zaio-card);
   padding: 0.5625rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;

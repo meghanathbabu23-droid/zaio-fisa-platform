@@ -23,7 +23,10 @@ function Brand() {
   return (
     <div className="border-b border-zaio-cloud px-6 py-5">
       <Logo />
-      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-zaio-slate">FISA admin</p>
+      <p className="mt-2 text-xs font-medium uppercase tracking-wide text-zaio-slate">
+        Zaio Institute of Technology
+      </p>
+      <p className="mt-0.5 text-[11px] font-medium text-zaio-slate/70">FISA admin</p>
     </div>
   );
 }
@@ -101,7 +104,7 @@ export function AdminLayout() {
 
   return (
     <div className="flex min-h-screen bg-zaio-paper">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-zaio-cloud bg-white lg:flex">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-zaio-cloud bg-zaio-sidebar lg:flex">
         <Brand />
         <nav className="flex flex-1 flex-col gap-1 p-4">
           <NavLinks role={admin.role} />
@@ -114,10 +117,10 @@ export function AdminLayout() {
           <button
             type="button"
             aria-label="Close menu"
-            className="absolute inset-0 bg-zaio-ink/40"
+            className="absolute inset-0 bg-black/60"
             onClick={() => setMenuOpen(false)}
           />
-          <aside className="relative flex h-full w-64 max-w-[85vw] flex-col bg-white shadow-xl">
+          <aside className="relative flex h-full w-64 max-w-[85vw] flex-col bg-zaio-sidebar shadow-xl">
             <Brand />
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-4">
               <NavLinks role={admin.role} onNavigate={() => setMenuOpen(false)} />
@@ -128,12 +131,12 @@ export function AdminLayout() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-3 border-b border-zaio-cloud bg-white px-4 py-3 lg:hidden">
+        <div className="flex items-center gap-3 border-b border-zaio-cloud bg-zaio-sidebar px-4 py-3 lg:hidden">
           <button
             type="button"
             aria-label="Open menu"
             onClick={() => setMenuOpen(true)}
-            className="rounded-xl border border-zaio-cloud px-3 py-1.5 text-sm font-medium text-zaio-ink transition-colors hover:bg-zaio-paper"
+            className="rounded-xl border border-zaio-cloud px-3 py-1.5 text-sm font-medium text-zaio-ink transition-colors hover:bg-zaio-mist"
           >
             Menu
           </button>

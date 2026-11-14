@@ -36,8 +36,8 @@ export function PracticalHistoryModal({
   const fileContent = snap?.files.find((f) => f.filename === activeFile)?.content ?? "";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zaio-ink/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-zaio-cloud bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-zaio-cloud bg-zaio-card shadow-xl">
         <div className="flex items-center justify-between border-b border-zaio-cloud px-6 py-4">
           <div>
             <h2 className="font-display text-lg font-semibold text-zaio-ink">Submission history</h2>
@@ -66,7 +66,7 @@ export function PracticalHistoryModal({
                   <button
                     type="button"
                     className={`w-full rounded-lg px-2 py-2 text-left ${
-                      selected === i ? "bg-zaio-blue text-white" : "hover:bg-zaio-paper"
+                      selected === i ? "bg-zaio-blue text-white" : "hover:bg-zaio-mist"
                     }`}
                     onClick={() => {
                       setSelected(i);
@@ -92,7 +92,7 @@ export function PracticalHistoryModal({
                   </button>
                 ))}
               </div>
-              <pre className="min-h-0 flex-1 overflow-auto bg-zaio-ink p-4 text-xs text-zaio-paper">
+              <pre className="min-h-0 flex-1 overflow-auto bg-zaio-paper p-4 text-xs text-zaio-ink">
                 {fileContent}
               </pre>
             </div>

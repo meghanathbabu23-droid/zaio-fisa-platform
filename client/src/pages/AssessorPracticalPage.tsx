@@ -30,12 +30,12 @@ export function AssessorPracticalPage() {
         description="Review submissions, automated test results, and approve final marks."
       />
       <div className="flex-1 p-8">
-        <p className="mb-4 rounded-lg border border-zaio-cloud bg-white px-4 py-2 text-xs text-zaio-ink/60">
+        <p className="mb-4 rounded-lg border border-zaio-cloud bg-zaio-card px-4 py-2 text-xs text-zaio-ink/60">
           Automated scores are generated from admin-defined test cases. They do not determine
           qualification outcomes — assessors set the approved final score.
         </p>
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/60">Loading…</p>
           ) : rows.length === 0 ? (

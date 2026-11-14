@@ -7,8 +7,8 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
   warning: "bg-amber-100 text-amber-900 ring-amber-900/5",
   error: "bg-red-100 text-red-900 ring-red-900/5",
   brand: "bg-zaio-blue/10 text-zaio-blue ring-zaio-blue/10",
-  sun: "bg-zaio-sun/30 text-zaio-ink ring-zaio-ink/5",
-  neutral: "bg-zaio-cloud text-zaio-ink/60 ring-zaio-ink/5",
+  sun: "bg-zaio-sun/30 text-zaio-ink ring-black/5",
+  neutral: "bg-zaio-cloud text-zaio-ink/60 ring-black/5",
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; children: ReactNode }) {

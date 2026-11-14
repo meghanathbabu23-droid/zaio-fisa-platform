@@ -60,7 +60,7 @@ export function ModerationPage() {
               type="button"
               onClick={() => setFilter(s)}
               className={`rounded-lg px-3 py-1.5 font-medium ${
-                filter === s ? "bg-zaio-blue text-white" : "border border-zaio-cloud bg-white text-zaio-ink"
+                filter === s ? "bg-zaio-blue text-white" : "border border-zaio-cloud bg-zaio-card text-zaio-ink"
               }`}
             >
               {s ? STATUS_LABEL[s] : "All"}
@@ -68,7 +68,7 @@ export function ModerationPage() {
           ))}
         </div>
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
-        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-zaio-cloud bg-zaio-card shadow-sm">
           {loading ? (
             <p className="px-6 py-10 text-sm text-zaio-ink/60">Loading…</p>
           ) : items.length === 0 ? (

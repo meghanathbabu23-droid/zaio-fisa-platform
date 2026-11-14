@@ -8,7 +8,7 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="border-b border-zaio-cloud bg-white px-8 py-6">
+    <header className="border-b border-zaio-cloud bg-zaio-card px-8 py-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-zaio-ink">

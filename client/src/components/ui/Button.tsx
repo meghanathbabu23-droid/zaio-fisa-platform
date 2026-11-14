@@ -5,10 +5,10 @@ type Size = "sm" | "md" | "lg";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary: "bg-zaio-blue text-white shadow-sm hover:bg-zaio-deep hover:shadow-md",
-  secondary: "border border-zaio-cloud text-zaio-ink hover:border-zaio-ink/25 hover:bg-zaio-paper",
+  secondary: "border border-zaio-cloud text-zaio-ink hover:border-zaio-ink/25 hover:bg-zaio-mist",
   ghost: "text-zaio-blue hover:underline",
-  sun: "bg-zaio-sun text-zaio-ink shadow-sm hover:bg-zaio-sun/90 hover:shadow-md",
-  ink: "bg-zaio-ink text-white shadow-sm hover:bg-zaio-graphite hover:shadow-md",
+  sun: "bg-zaio-sun text-zaio-paper shadow-sm hover:bg-zaio-sun/90 hover:shadow-md",
+  ink: "bg-zaio-ink text-zaio-paper shadow-sm hover:bg-zaio-graphite hover:shadow-md",
 };
 
 const SIZE_CLASSES: Record<Size, string> = {

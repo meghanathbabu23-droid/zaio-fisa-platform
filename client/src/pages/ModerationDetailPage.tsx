@@ -63,7 +63,7 @@ export function ModerationDetailPage() {
 
   return (
     <div className="min-h-screen bg-zaio-paper">
-      <header className="border-b border-zaio-cloud bg-white px-6 py-4">
+      <header className="border-b border-zaio-cloud bg-zaio-card px-6 py-4">
         <Link to="/moderation" className="text-sm text-zaio-blue">
           ← Moderation queue
         </Link>
@@ -172,7 +172,7 @@ export function ModerationDetailPage() {
               </button>
             ))}
           </div>
-          <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-zaio-ink p-4 text-xs text-zaio-paper">
+          <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-zaio-paper p-4 text-xs text-zaio-ink">
             {fileContent}
           </pre>
         </Card>

@@ -1,4 +1,4 @@
-import { clearStudentToken, getStudentToken } from "./student/session";
+import { clearStudentId, clearStudentToken, getStudentToken } from "./student/session";
 import { getCsrfToken, notifyAdminUnauthorized } from "./admin/session";
 import type {
   AdminIdentity,
@@ -9,6 +9,9 @@ import type {
   Exam,
   ExamAssignment,
   ExamInput,
+  GenerationOutcome,
+  GenerationRequest,
+  GenerationUnresolvedSlot,
   McqExamView,
   OtpChannel,
   OtpRequestResponse,
@@ -258,6 +261,7 @@ export async function createPracticalExam(data: {
   durationMinutes: number;
   instructions: string;
   cohortId: string | null;
+  totalMarks: number;
 }): Promise<Exam> {
   return handleResponse(
     await adminFetch("/api/exams", {
@@ -265,6 +269,34 @@ export async function createPracticalExam(data: {
       body: JSON.stringify({ ...data, type: "PRACTICAL" }),
     })
   );
+}
+
+/**
+ * Does NOT use the generic handleResponse — the UI needs to branch on the
+ * specific status code (400 invalid / 503 not configured / 409 already
+ * running / 422 insufficient uniqueness / other), so this returns a
+ * discriminated result instead of throwing one generic Error.
+ */
+export async function generateExamQuestions(data: GenerationRequest): Promise<GenerationOutcome> {
+  const res = await adminFetch("/api/exams/generate", { method: "POST", body: JSON.stringify(data) });
+  const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+  if (res.status === 201) {
+    return {
+      kind: "success",
+      jobId: body.jobId as string,
+      exam: body.exam as Exam,
+      topicCoverage: (body.topicCoverage as Record<string, number>) ?? {},
+      difficultyDistribution: (body.difficultyDistribution as Record<string, number>) ?? {},
+    };
+  }
+  const error = (body.error as string) ?? res.statusText;
+  if (res.status === 503) return { kind: "not_configured", error };
+  if (res.status === 409) return { kind: "locked", error };
+  if (res.status === 422) {
+    return { kind: "insufficient_uniqueness", error, unresolvedSlots: (body.unresolvedSlots as GenerationUnresolvedSlot[]) ?? [] };
+  }
+  if (res.status === 400) return { kind: "invalid", error };
+  return { kind: "server_error", error };
 }
 
 export async function updateExam(id: string, data: Omit<ExamInput, "questions"> & { questions?: ExamInput["questions"] }): Promise<Exam> {
@@ -308,11 +340,12 @@ export async function deleteAssignment(id: string): Promise<void> {
 // ——— Student auth & portal (public / student-authenticated — never adminFetch) ———
 
 export async function requestOtp(channel: OtpChannel, value: string): Promise<OtpRequestResponse> {
+  void channel; // always "email" — kept as a parameter to mirror the server's OtpChannel enum
   return handleResponse(
     await fetch("/api/auth/otp/request", {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify(channel === "email" ? { email: value } : { phone: value }),
+      body: JSON.stringify({ email: value }),
     })
   );
 }
@@ -322,11 +355,12 @@ export async function verifyOtp(
   value: string,
   code: string
 ): Promise<{ token: string; student: StudentAuthStudent }> {
+  void channel; // always "email" — kept as a parameter to mirror the server's OtpChannel enum
   return handleResponse(
     await fetch("/api/auth/otp/verify", {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify(channel === "email" ? { email: value, code } : { phone: value, code }),
+      body: JSON.stringify({ email: value, code }),
     })
   );
 }
@@ -397,6 +431,7 @@ export async function submitMcqExam(assignmentId: string, answers: number[]) {
 export async function logoutStudent(): Promise<void> {
   await authedStudentFetch("/api/auth/logout", { method: "POST" });
   clearStudentToken();
+  clearStudentId();
 }
 
 export async function fetchPracticalWorkspace(assignmentId: string): Promise<{
@@ -550,6 +585,45 @@ export async function uploadProctoringRecording(
       method: "POST",
       body: JSON.stringify({ kind, mimeType, dataBase64 }),
     })
+  );
+}
+
+export async function uploadRecordingChunk(
+  sessionId: string,
+  kind: "WEBCAM_MIC" | "SCREEN",
+  sequenceNumber: number,
+  sha256: string,
+  dataBase64: string
+) {
+  return handleResponse<{ sequenceNumber: number; alreadyReceived: boolean }>(
+    await authedStudentFetch(`/api/student/proctoring/sessions/${sessionId}/recordings/chunks`, {
+      method: "POST",
+      body: JSON.stringify({ kind, sequenceNumber, sha256, dataBase64 }),
+    })
+  );
+}
+
+export async function completeRecordingUpload(
+  sessionId: string,
+  kind: "WEBCAM_MIC" | "SCREEN",
+  expectedChunkCount: number,
+  mimeType: string,
+  finalSha256?: string
+) {
+  return handleResponse(
+    await authedStudentFetch(`/api/student/proctoring/sessions/${sessionId}/recordings/complete`, {
+      method: "POST",
+      body: JSON.stringify({ kind, expectedChunkCount, mimeType, finalSha256 }),
+    })
+  );
+}
+
+export async function getRecordingUploadStatus(
+  sessionId: string,
+  kind: "WEBCAM_MIC" | "SCREEN"
+) {
+  return handleResponse<{ receivedSequenceNumbers: number[] }>(
+    await authedStudentFetch(`/api/student/proctoring/sessions/${sessionId}/recordings/${kind}/status`)
   );
 }
 

@@ -15,7 +15,7 @@ const SRC: Record<LogoVariant, Record<LogoTone, string>> = {
 /** Official Zaio logo asset. Never recolour/stretch — pick `tone` to match the background instead. */
 export function Logo({
   variant = "horizontal",
-  tone = "light",
+  tone = "dark",
   className = "",
 }: {
   variant?: LogoVariant;

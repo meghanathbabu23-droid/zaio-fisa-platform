@@ -96,7 +96,7 @@ export function EvidencePage() {
       />
       <div className="flex-1 space-y-4 p-8">
         {demoNote ? (
-          <p className="rounded-lg border border-dashed border-zaio-cloud bg-white px-4 py-2 text-xs text-zaio-ink/60">
+          <p className="rounded-lg border border-dashed border-zaio-cloud bg-zaio-card px-4 py-2 text-xs text-zaio-ink/60">
             {demoNote}
           </p>
         ) : null}
@@ -156,7 +156,7 @@ export function EvidencePage() {
         ) : rows.length === 0 ? (
           <EmptyState>No assignments match these filters.</EmptyState>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-zaio-cloud bg-white">
+          <div className="overflow-x-auto rounded-xl border border-zaio-cloud bg-zaio-card">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-zaio-cloud bg-zaio-paper/80 text-xs font-medium uppercase tracking-wide text-zaio-ink/60">
                 <tr>
