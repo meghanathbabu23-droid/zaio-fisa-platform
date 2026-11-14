@@ -2,31 +2,15 @@
   command = "npm run build"
   publish = "dist"
 
-# ─────────────────────────────────────────────────────────────────────────
-# API REDIRECT — INTENTIONALLY DISABLED. Do not uncomment until a real
-# Render backend URL exists.
-#
-# Would proxy /api/* to the backend so the browser sees everything as
-# same-origin — no VITE_API_BASE_URL, no cross-origin cookie changes needed.
-# Provider-neutral: works identically whichever host actually runs the
-# Express backend (currently targeting Render, not Heroku — see
-# docs/DEPLOYMENT-PLAN.md and the MongoDB-cutover docs for the current
-# architecture decision).
-#
-# Left commented out rather than pointed at a placeholder domain: with
-# force=true and status=200, an *active* rule pointing at a non-existent
-# "REPLACE-WITH-..." host would make every /api/* request fail against a
-# domain that doesn't resolve, rather than failing in some more obviously
-# diagnosable way. Uncomment and fill in the real URL once the Render
-# service exists — and keep it ABOVE the SPA fallback below when you do,
-# or /api requests will be swallowed by index.html instead.
-#
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://REPLACE-WITH-REAL-RENDER-SERVICE-URL.onrender.com/api/:splat"
-#   status = 200
-#   force = true
-# ─────────────────────────────────────────────────────────────────────────
+# Proxies /api/* to the live Render backend so the browser sees everything
+# as same-origin — no VITE_API_BASE_URL, no cross-origin cookie changes
+# needed. Must stay ABOVE the SPA fallback below, or /api requests would be
+# swallowed by index.html instead.
+[[redirects]]
+  from = "/api/*"
+  to = "https://zaio-fisa-backend.onrender.com/api/:splat"
+  status = 200
+  force = true
 
 # SPA fallback so client-side routing (react-router) works on refresh/deep links.
 [[redirects]]
