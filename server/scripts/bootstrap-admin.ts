@@ -25,7 +25,16 @@ try {
   // Fine if absent — env vars may already be set in the shell.
 }
 
-const { PrismaClient } = await import("@prisma/client");
+// The shared, provider-aware instance (src/prisma.ts) — not a fresh
+// `new PrismaClient()` from the default SQLite-generated package. That
+// bypassed ACTIVE_DB_PROVIDER/DATABASE_URL entirely: against a MongoDB
+// production deployment, this script would otherwise construct a
+// SQLite-generated client while the app and DATABASE_URL are set up for
+// Mongo, silently targeting the wrong (or an invalid) connection instead
+// of the real production database. Importing the shared instance means
+// this script always targets whatever database the environment it's
+// actually run in is configured for — the same one the running app uses.
+const { prisma } = await import("../src/prisma.js");
 const { hashPassword } = await import("../src/lib/adminPassword.js");
 const { isStrongPassword } = await import("../src/lib/adminAuthConfig.js");
 
@@ -135,7 +144,6 @@ async function promptNewPassword(): Promise<string> {
 }
 
 async function main() {
-  const prisma = new PrismaClient();
   try {
     const existingCount = await prisma.administrator.count();
     if (existingCount > 0) {
