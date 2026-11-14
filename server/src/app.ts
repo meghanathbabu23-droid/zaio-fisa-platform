@@ -34,6 +34,11 @@ import { requireRole } from "./middleware/requireRole.js";
 const { SUPER_ADMIN, ADMIN, ASSESSOR, MODERATOR } = AdminRole;
 
 export const app = express();
+// Render puts exactly one reverse proxy (its own edge) in front of this
+// process. `1` trusts that one hop's X-Forwarded-For entry for req.ip —
+// `true` would trust the whole chain (spoofable), the default `false`
+// ignores it entirely (every client collapses to one rate-limit bucket).
+app.set("trust proxy", 1);
 
 app.use(
   cors({

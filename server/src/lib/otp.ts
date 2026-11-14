@@ -103,6 +103,21 @@ export async function requestOtp(params: { channel: OtpChannel; value: string })
       ? await (eligible ? getEmailProvider() : new MockEmailProvider()).sendOtpEmail(value, code, expiresAt)
       : await (eligible ? getSmsProvider() : new MockSmsProvider()).sendOtpSms(value, code, expiresAt);
 
+  // Diagnostic-only, no PII/secrets: which path a request actually took.
+  // Without this, a request that silently falls back to the mock provider
+  // (deliveryMode=live but this student's cohort isn't realOtpEligible yet)
+  // is indistinguishable in the logs from a real send that succeeded — both
+  // return {ok:true} with no log line at all otherwise. Carries no
+  // identifier (not even the internal DB id) — channel/mode/provider/result
+  // are enough to diagnose this class of issue without logging anything
+  // that could be tied back to a specific student on a routine request.
+  const providerUsed = eligible ? (channel === OtpChannel.EMAIL ? otpConfig.emailProviderName : "twilio") : "mock";
+  // eslint-disable-next-line no-console
+  console.log(
+    `[otp] request channel=${channel} deliveryMode=${otpConfig.deliveryMode} ` +
+      `eligible=${eligible} providerUsed=${providerUsed} result=${result.ok ? "ok" : "failed"}`
+  );
+
   if (!result.ok) {
     // Redacted, correlated failure record — no raw provider error text, no
     // OTP, no email/phone, anywhere. The console line and the DB row share
