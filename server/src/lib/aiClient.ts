@@ -1,5 +1,5 @@
 import type { PracticalTestKind } from "@prisma/client";
-import OpenAI from "openai";
+import OpenAI, { APIError } from "openai";
 import { aiConfig, type LlmProvider } from "./aiConfig.js";
 
 export type Difficulty = "EASY" | "MEDIUM" | "HARD";
@@ -62,6 +62,9 @@ export interface AiClient {
   embed(text: string): Promise<number[]>;
 }
 
+/** OpenAI structured outputs with strict:true require additionalProperties:false
+ * on every object in the schema (see platform docs) — omitting it yields HTTP 400
+ * before the model runs. */
 const MCQ_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
@@ -71,6 +74,7 @@ const MCQ_RESPONSE_SCHEMA = {
     summary: { type: "string", description: "One short sentence describing this question's scenario." },
   },
   required: ["prompt", "options", "correctIndex", "summary"],
+  additionalProperties: false,
 };
 
 const CODING_RESPONSE_SCHEMA = {
@@ -97,7 +101,51 @@ const CODING_RESPONSE_SCHEMA = {
     "publicTestCases",
     "hiddenTestCases",
   ],
+  additionalProperties: false,
 };
+
+/** Safe OpenAI error fields for logs — never prompts, keys, or PII. */
+export type OpenAiSafeErrorLog = {
+  operation: "chat.completions" | "embeddings";
+  httpStatus: number | undefined;
+  message: string | undefined;
+  errorType: string | undefined;
+  errorCode: string | undefined;
+  param: string | undefined;
+  requestId: string | undefined;
+};
+
+export function openAiSafeErrorLogFromApiError(
+  operation: OpenAiSafeErrorLog["operation"],
+  e: APIError
+): OpenAiSafeErrorLog {
+  const body =
+    e.error && typeof e.error === "object" ? (e.error as Record<string, unknown>) : ({} as Record<string, unknown>);
+  const code = body.code;
+  return {
+    operation,
+    httpStatus: e.status,
+    message: typeof body.message === "string" ? body.message : undefined,
+    errorType: typeof body.type === "string" ? body.type : typeof e.type === "string" ? e.type : undefined,
+    errorCode: typeof code === "string" ? code : code != null ? String(code) : e.code != null ? String(e.code) : undefined,
+    param: typeof body.param === "string" ? body.param : typeof e.param === "string" ? e.param : undefined,
+    requestId: e.requestID ?? undefined,
+  };
+}
+
+function logOpenAiApiError(log: OpenAiSafeErrorLog): void {
+  // eslint-disable-next-line no-console
+  console.error("[aiClient] OpenAI API error", JSON.stringify(log));
+}
+
+function summarizeOpenAiHttpError(e: APIError): string {
+  const log = openAiSafeErrorLogFromApiError("chat.completions", e);
+  const bits = [`status ${e.status ?? "unknown"}`];
+  if (log.errorType) bits.push(log.errorType);
+  if (log.param) bits.push(`param=${log.param}`);
+  if (log.message) bits.push(log.message);
+  return `OpenAI request failed (${bits.join("; ")})`;
+}
 
 function buildAvoidClause(avoidSummaries: string[]): string {
   if (avoidSummaries.length === 0) return "";
@@ -237,14 +285,15 @@ export class RealAiClient implements AiClient {
         },
       });
     } catch (e) {
-      if (e instanceof OpenAI.APIError) {
+      if (e instanceof APIError) {
+        logOpenAiApiError(openAiSafeErrorLogFromApiError("chat.completions", e));
         if (e.status === 429) {
           throw new AiProviderError("OpenAI rate limit exceeded", "RATE_LIMITED");
         }
         if (e.status === 401 || e.status === 403) {
           throw new AiProviderError("OpenAI authentication failed (check OPENAI_API_KEY)", "AUTH_ERROR");
         }
-        throw new AiProviderError(`OpenAI request failed with status ${e.status ?? "unknown"}`, "UNKNOWN");
+        throw new AiProviderError(summarizeOpenAiHttpError(e), "UNKNOWN");
       }
       throw new AiProviderError(
         `OpenAI request failed: ${e instanceof Error ? e.message : "network error"}`,
@@ -318,14 +367,20 @@ export class RealAiClient implements AiClient {
         dimensions: aiConfig.openai.embeddingDimensions,
       });
     } catch (e) {
-      if (e instanceof OpenAI.APIError) {
+      if (e instanceof APIError) {
+        logOpenAiApiError(openAiSafeErrorLogFromApiError("embeddings", e));
         if (e.status === 429) {
           throw new AiProviderError("OpenAI embeddings rate limit exceeded", "RATE_LIMITED");
         }
         if (e.status === 401 || e.status === 403) {
           throw new AiProviderError("OpenAI authentication failed (check OPENAI_API_KEY)", "AUTH_ERROR");
         }
-        throw new AiProviderError(`OpenAI embeddings request failed with status ${e.status ?? "unknown"}`, "UNKNOWN");
+        const log = openAiSafeErrorLogFromApiError("embeddings", e);
+        const bits = [`status ${e.status ?? "unknown"}`];
+        if (log.errorType) bits.push(log.errorType);
+        if (log.param) bits.push(`param=${log.param}`);
+        if (log.message) bits.push(log.message);
+        throw new AiProviderError(`OpenAI embeddings request failed (${bits.join("; ")})`, "UNKNOWN");
       }
       throw new AiProviderError(
         `OpenAI embeddings request failed: ${e instanceof Error ? e.message : "network error"}`,

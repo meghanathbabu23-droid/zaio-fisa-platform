@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import OpenAI from "openai";
-import { AiProviderError, RealAiClient } from "../src/lib/aiClient.js";
+import { AiProviderError, openAiSafeErrorLogFromApiError, RealAiClient } from "../src/lib/aiClient.js";
 import { aiConfig } from "../src/lib/aiConfig.js";
 
 /**
@@ -155,6 +155,8 @@ describe("RealAiClient.generateMcq — OpenAI adapter", () => {
     expect(args.model).toBe(aiConfig.openai.model);
     expect(args.response_format?.type).toBe("json_schema");
     expect(args.response_format?.json_schema?.name).toBe("mcq_question");
+    expect(args.response_format?.json_schema?.strict).toBe(true);
+    expect(args.response_format?.json_schema?.schema).toMatchObject({ additionalProperties: false });
     expect(args.messages[0].content).toContain("Flexbox");
     expect(args.messages[0].content).toContain("old");
   });
@@ -212,6 +214,59 @@ describe("RealAiClient.generateMcq — OpenAI adapter", () => {
     const client = openAiLlmClient(create);
     await expect(client.generateMcq({ topic: "HTML", difficulty: "EASY", avoidSummaries: [] })).rejects.toMatchObject({
       category: "INVALID_RESPONSE",
+    });
+  });
+
+  it("logs safe OpenAI error fields and surfaces param on schema HTTP 400", async () => {
+    const headers = new Headers({ "x-request-id": "req_schema_400_test" });
+    const apiBody = {
+      message:
+        "Invalid schema for response_format 'mcq_question': In context=(), 'additionalProperties' is required to be supplied and to be false.",
+      type: "invalid_request_error",
+      param: "response_format",
+      code: null,
+    };
+    const create = mockOpenAiCreate().mockRejectedValue(new OpenAI.APIError(400, apiBody, undefined, headers));
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = openAiLlmClient(create);
+    await expect(client.generateMcq({ topic: "HTML", difficulty: "EASY", avoidSummaries: [] })).rejects.toMatchObject({
+      category: "UNKNOWN",
+      message: expect.stringContaining("param=response_format"),
+    });
+    expect(logSpy).toHaveBeenCalledWith(
+      "[aiClient] OpenAI API error",
+      expect.stringContaining("req_schema_400_test")
+    );
+    const logged = JSON.parse(String(logSpy.mock.calls[0]![1])) as Record<string, unknown>;
+    expect(logged).toMatchObject({
+      operation: "chat.completions",
+      httpStatus: 400,
+      errorType: "invalid_request_error",
+      param: "response_format",
+      requestId: "req_schema_400_test",
+    });
+    expect(String(logged.message)).toContain("additionalProperties");
+    logSpy.mockRestore();
+  });
+});
+
+describe("openAiSafeErrorLogFromApiError", () => {
+  it("extracts only safe fields from an OpenAI.APIError", () => {
+    const headers = new Headers({ "x-request-id": "req_abc" });
+    const err = new OpenAI.APIError(
+      400,
+      { message: "bad schema", type: "invalid_request_error", param: "response_format", code: "x" },
+      undefined,
+      headers
+    );
+    expect(openAiSafeErrorLogFromApiError("chat.completions", err)).toEqual({
+      operation: "chat.completions",
+      httpStatus: 400,
+      message: "bad schema",
+      errorType: "invalid_request_error",
+      errorCode: "x",
+      param: "response_format",
+      requestId: "req_abc",
     });
   });
 });
