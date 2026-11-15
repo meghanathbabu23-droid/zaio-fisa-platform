@@ -13,6 +13,8 @@ import {
   getAssignmentForStudent,
   isValidFilename,
 } from "../lib/practical.js";
+import { withPrismaWriteConflictRetry } from "../lib/prismaWriteConflict.js";
+import { forwardAsyncErrorsOnRouter } from "../middleware/forwardAsyncErrors.js";
 
 export const practicalStudentRouter = Router({ mergeParams: true });
 export const practicalAssessorRouter = Router({ mergeParams: true });
@@ -180,30 +182,32 @@ practicalStudentRouter.put("/autosave", async (req: AuthedRequest, res) => {
   }
 
   const now = new Date();
-  await prisma.$transaction(async (tx) => {
-    for (const f of files) {
-      await tx.practicalFile.upsert({
-        where: {
-          workspaceId_filename: { workspaceId: ws.id, filename: f.filename },
+  await withPrismaWriteConflictRetry(() =>
+    prisma.$transaction(async (tx) => {
+      for (const f of files) {
+        await tx.practicalFile.upsert({
+          where: {
+            workspaceId_filename: { workspaceId: ws.id, filename: f.filename },
+          },
+          create: { workspaceId: ws.id, filename: f.filename, content: f.content },
+          update: { content: f.content },
+        });
+      }
+      await tx.practicalWorkspace.update({
+        where: { id: ws.id },
+        data: {
+          lastSavedAt: now,
+          ...(activeFile ? { activeFile } : {}),
         },
-        create: { workspaceId: ws.id, filename: f.filename, content: f.content },
-        update: { content: f.content },
       });
-    }
-    await tx.practicalWorkspace.update({
-      where: { id: ws.id },
-      data: {
-        lastSavedAt: now,
-        ...(activeFile ? { activeFile } : {}),
-      },
-    });
-    if (gate.assignment.status === AssignmentStatus.ASSIGNED) {
-      await tx.examAssignment.update({
-        where: { id: assignmentId },
-        data: { status: AssignmentStatus.IN_PROGRESS },
-      });
-    }
-  });
+      if (gate.assignment.status === AssignmentStatus.ASSIGNED) {
+        await tx.examAssignment.update({
+          where: { id: assignmentId },
+          data: { status: AssignmentStatus.IN_PROGRESS },
+        });
+      }
+    })
+  );
 
   const full = await prisma.practicalWorkspace.findUniqueOrThrow({
     where: { id: ws.id },
@@ -424,3 +428,5 @@ practicalAssessorRouter.get("/history", async (req: Request<{ assignmentId: stri
     })),
   });
 });
+
+forwardAsyncErrorsOnRouter(practicalStudentRouter);
