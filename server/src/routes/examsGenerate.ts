@@ -55,7 +55,10 @@ examsGenerateRouter.post("/", writeOnly, async (req: AuthedAdminRequest, res) =>
   // duplicated here, so there's exactly one place this can drift.
   const aiClient = getAiClient();
   if (!aiClient) {
-    res.status(503).json({ error: "AI generation is not configured (missing ANTHROPIC_API_KEY/VOYAGE_API_KEY)" });
+    res.status(503).json({
+      error:
+        "AI generation is not configured — when AI_LLM_PROVIDER=openai set OPENAI_API_KEY only; when AI_LLM_PROVIDER=gemini set GEMINI_API_KEY and VOYAGE_API_KEY",
+    });
     return;
   }
 
