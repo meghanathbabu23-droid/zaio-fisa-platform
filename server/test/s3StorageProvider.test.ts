@@ -9,13 +9,7 @@ import {
   S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
-import { ExamType } from "@prisma/client";
-import { prisma } from "../src/prisma.js";
 import { S3StorageProvider } from "../src/lib/storage/s3StorageProvider.js";
-import { uploadExamAsset } from "../src/lib/examAssets.js";
-import {
-  setExamAssetStorageProviderOverrideForTests,
-} from "../src/lib/storage/examAssetStorage.js";
 
 const s3Mock = mockClient(S3Client);
 
@@ -35,7 +29,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setExamAssetStorageProviderOverrideForTests(null);
   vi.restoreAllMocks();
 });
 
@@ -260,33 +253,14 @@ describe("S3StorageProvider — credential and path leakage", () => {
   });
 });
 
-describe("S3StorageProvider — database failure after storage upload (same accepted tradeoff as local disk)", () => {
-  it("leaves the uploaded object in S3 as a harmless orphan when the subsequent DB write fails", async () => {
-    const provider = new S3StorageProvider(VALID_CONFIG);
-    setExamAssetStorageProviderOverrideForTests(provider);
-    s3Mock.on(PutObjectCommand).resolves({});
-    s3Mock.on(HeadObjectCommand).rejects(
-      new S3ServiceException({ name: "NotFound", $fault: "client", $metadata: { httpStatusCode: 404 } })
-    );
-
-    const exam = await prisma.exam.create({
-      data: { title: `s3-db-failure-${Date.now()}`, type: ExamType.PRACTICAL, durationMinutes: 60 },
-    });
-    vi.spyOn(prisma.examAsset, "upsert").mockImplementationOnce(async () => {
-      throw new Error("simulated database failure after storage upload");
-    });
-
-    await expect(uploadExamAsset(exam.id, "brief.pdf", fakePdf())).rejects.toThrow(
-      "simulated database failure after storage upload"
-    );
-
-    // Storage upload itself completed before the DB failure — the
-    // (mocked) object is present in S3, exactly the same orphan-is-
-    // acceptable tradeoff already proven for local disk in
-    // examAssetsPdfReplacementSafety.test.ts, now confirmed for S3 too.
-    expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
-
-    const rows = await prisma.examAsset.findMany({ where: { examId: exam.id } });
-    expect(rows).toHaveLength(0);
-  });
-});
+// A "database failure after a successful storage upload" scenario is
+// deliberately NOT tested here. That scenario exercises uploadExamAsset's
+// application-level orchestration (validate -> provider.save() -> Prisma
+// write) and the PDF feature's data integrity guarantees — it is not
+// behavior of the S3StorageProvider class itself, which has no concept of
+// a database at all. This file is scoped to provider-level behavior only;
+// the orchestration/integrity scenario is covered by the PDF feature's own
+// suite (server/test/examAssetsPdfReplacementSafety.test.ts — see "a
+// database failure on the new upload preserves the old PDF"), which
+// exercises the same uploadExamAsset code path through the StorageProvider
+// interface regardless of which concrete provider is behind it.
