@@ -1,5 +1,6 @@
 import path from "node:path";
 import { LocalDiskStorageProvider } from "./localDiskStorageProvider.js";
+import { resolveStorageMode } from "./resolveStorageMode.js";
 import { S3StorageProvider } from "./s3StorageProvider.js";
 import type { StorageProvider } from "./types.js";
 
@@ -11,7 +12,7 @@ let overrideForTests: StorageProvider | null = null;
 let cached: StorageProvider | null = null;
 
 function buildProvider(): StorageProvider {
-  const mode = process.env.STORAGE_PROVIDER ?? "local";
+  const mode = resolveStorageMode();
   if (mode === "s3") {
     return new S3StorageProvider({
       bucket: process.env.S3_BUCKET ?? "",
