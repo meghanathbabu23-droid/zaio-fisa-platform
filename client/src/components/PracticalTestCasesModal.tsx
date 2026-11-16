@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import {
   createPracticalTestCase,
   deletePracticalTestCase,
+  fetchPracticalQuestions,
   fetchPracticalTestCases,
+  updatePracticalTestCase,
 } from "../api";
 import type {
   DomBehaviorAction,
   DomBehaviorCondition,
   DomBehaviorSpec,
+  PracticalQuestion,
   PracticalTestCase,
   PracticalTestKind,
 } from "../types";
@@ -46,6 +49,7 @@ const emptyCase = (): Omit<PracticalTestCase, "id" | "examId" | "sortOrder"> => 
   points: 1,
   // Hidden by default — an admin must explicitly mark a test case public.
   isHidden: true,
+  questionId: null,
 });
 
 export function PracticalTestCasesModal({
@@ -58,6 +62,7 @@ export function PracticalTestCasesModal({
   onClose: () => void;
 }) {
   const [cases, setCases] = useState<PracticalTestCase[]>([]);
+  const [questions, setQuestions] = useState<PracticalQuestion[]>([]);
   const [draft, setDraft] = useState(emptyCase());
   const [domSpec, setDomSpec] = useState<DomBehaviorSpec>(emptyDomSpec());
   const [error, setError] = useState<string | null>(null);
@@ -66,11 +71,34 @@ export function PracticalTestCasesModal({
     fetchPracticalTestCases(examId)
       .then(setCases)
       .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
+    fetchPracticalQuestions(examId)
+      .then(setQuestions)
+      .catch(() => {
+        /* question picker just stays empty — not fatal to this modal */
+      });
   }, [examId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  async function changeCaseQuestion(c: PracticalTestCase, questionId: string | null) {
+    setError(null);
+    try {
+      await updatePracticalTestCase(examId, c.id, {
+        label: c.label,
+        kind: c.kind,
+        targetFile: c.targetFile,
+        expression: c.expression,
+        points: c.points,
+        isHidden: c.isHidden,
+        questionId,
+      });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update question link");
+    }
+  }
 
   function isDomSpecValid(spec: DomBehaviorSpec): boolean {
     if (spec.steps.length === 0) return false;
@@ -133,6 +161,21 @@ export function PracticalTestCasesModal({
                     {c.targetFile ? ` · ${c.targetFile}` : ""}
                   </p>
                   <code className="mt-1 block text-xs text-zaio-ink/70">{c.expression}</code>
+                  <label className="mt-1 flex items-center gap-1 text-xs text-zaio-ink/60">
+                    Question:
+                    <select
+                      className="input w-auto py-0.5 text-xs"
+                      value={c.questionId ?? ""}
+                      onChange={(e) => void changeCaseQuestion(c, e.target.value || null)}
+                    >
+                      <option value="">None (ungrouped)</option>
+                      {questions.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          {q.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <button
                   type="button"
@@ -304,6 +347,21 @@ export function PracticalTestCasesModal({
                 Hidden (private evaluation case)
               </label>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              Question (optional)
+              <select
+                className="input"
+                value={draft.questionId ?? ""}
+                onChange={(e) => setDraft({ ...draft, questionId: e.target.value || null })}
+              >
+                <option value="">None (ungrouped)</option>
+                {questions.map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.title}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Button type="submit" size="sm">
               Add test case
             </Button>

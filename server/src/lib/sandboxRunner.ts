@@ -26,6 +26,12 @@ export type TestCaseInput = {
   targetFile: string | null;
   expression: string;
   points: number;
+  /** Optional PracticalQuestion grouping — passed through so the caller can
+   * group feedback by question. Not sent to or read from the sandbox
+   * container; it's attached to each result locally, after the container
+   * responds (see the `results.map` enrichment below), since the container
+   * image is a separate, pre-built artifact this app doesn't control. */
+  questionId?: string | null;
 };
 
 export type TestCaseResult = {
@@ -36,6 +42,7 @@ export type TestCaseResult = {
   earned: number;
   passed: boolean;
   detail: string;
+  questionId: string | null;
 };
 
 export type SandboxMode = "sandbox" | "sandbox_timeout" | "sandbox_error";
@@ -167,7 +174,10 @@ export function runInSandbox(
       clearTimeout(timer);
       if (settled) return;
       try {
-        const parsed = JSON.parse(stdout) as { results?: TestCaseResult[]; error?: string };
+        const parsed = JSON.parse(stdout) as {
+          results?: Omit<TestCaseResult, "questionId">[];
+          error?: string;
+        };
         if (parsed.error || !Array.isArray(parsed.results)) {
           if (stderr) {
             // eslint-disable-next-line no-console
@@ -176,10 +186,18 @@ export function runInSandbox(
           finish(emptyReport("sandbox_error"));
           return;
         }
-        const earnedPoints = parsed.results.reduce((s, r) => s + r.earned, 0);
+        // The container (a separate, pre-built image) has no notion of
+        // questions — it only ever echoes back the testCaseId it was given.
+        // Enrich each result with the matching input's questionId locally.
+        const questionIdByTestCaseId = new Map(testCases.map((tc) => [tc.id, tc.questionId ?? null]));
+        const results: TestCaseResult[] = parsed.results.map((r) => ({
+          ...r,
+          questionId: questionIdByTestCaseId.get(r.testCaseId) ?? null,
+        }));
+        const earnedPoints = results.reduce((s, r) => s + r.earned, 0);
         const maxPoints = testCases.reduce((s, tc) => s + tc.points, 0) || 1;
         const scorePercent = (earnedPoints / maxPoints) * 100;
-        finish({ ok: true, mode: "sandbox", results: parsed.results, earnedPoints, maxPoints, scorePercent });
+        finish({ ok: true, mode: "sandbox", results, earnedPoints, maxPoints, scorePercent });
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error("[sandboxRunner] malformed container output:", e instanceof Error ? e.message : e);

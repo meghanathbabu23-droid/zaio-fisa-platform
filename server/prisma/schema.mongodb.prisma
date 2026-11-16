@@ -101,6 +101,7 @@ model Exam {
   questions       McqQuestion[]
   assignments     ExamAssignment[]
   practicalTests  PracticalTestCase[]
+  practicalQuestions PracticalQuestion[]
 }
 
 model PracticalTestCase {
@@ -114,6 +115,40 @@ model PracticalTestCase {
   points     Int               @default(1)
   sortOrder  Int               @default(0)
   isHidden   Boolean           @default(true)
+  questionId String?
+  question   PracticalQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+}
+
+/// See schema.prisma for the full doc comments — kept identical here.
+model PracticalQuestion {
+  id           String               @id @default(cuid()) @map("_id")
+  examId       String
+  exam         Exam                 @relation(fields: [examId], references: [id], onDelete: Cascade)
+  title        String
+  scenario     String               @default("")
+  instructions String               @default("")
+  requirements String               @default("[]")
+  marks        Int                  @default(0)
+  difficulty   String               @default("MEDIUM")
+  sortOrder    Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  testCases    PracticalTestCase[]
+  assets       PracticalQuestionReferenceAsset[]
+}
+
+model PracticalQuestionReferenceAsset {
+  id         String            @id @default(cuid()) @map("_id")
+  questionId String
+  question   PracticalQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+  sha256     String
+  createdAt  DateTime          @default(now())
+
+  @@unique([questionId, filename])
 }
 
 model McqQuestion {

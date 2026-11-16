@@ -4,6 +4,7 @@ import { ExamFormModal } from "../components/ExamFormModal";
 import { GenerateExamModal } from "../components/GenerateExamModal";
 import { PracticalExamFormModal } from "../components/PracticalExamFormModal";
 import { PracticalTestCasesModal } from "../components/PracticalTestCasesModal";
+import { PracticalQuestionsModal } from "../components/PracticalQuestionsModal";
 import { PageHeader } from "../components/PageHeader";
 import type { Cohort, ExamInput } from "../types";
 import { Button } from "../components/ui/Button";
@@ -29,6 +30,9 @@ export function ExamsPage() {
   const [practicalOpen, setPracticalOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [testCasesExam, setTestCasesExam] = useState<{ id: string; title: string } | null>(null);
+  const [questionsExam, setQuestionsExam] = useState<{ id: string; title: string; totalMarks: number | null } | null>(
+    null
+  );
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -155,13 +159,22 @@ export function ExamsPage() {
                     <td className="px-6 py-4">{exam._count?.assignments ?? "—"}</td>
                     <td className="px-6 py-4 text-right">
                       {exam.type === "PRACTICAL" ? (
-                        <button
-                          type="button"
-                          className="mr-3 text-zaio-blue"
-                          onClick={() => setTestCasesExam({ id: exam.id, title: exam.title })}
-                        >
-                          Test cases
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="mr-3 text-zaio-blue"
+                            onClick={() => setQuestionsExam({ id: exam.id, title: exam.title, totalMarks: exam.totalMarks })}
+                          >
+                            Questions
+                          </button>
+                          <button
+                            type="button"
+                            className="mr-3 text-zaio-blue"
+                            onClick={() => setTestCasesExam({ id: exam.id, title: exam.title })}
+                          >
+                            Test cases
+                          </button>
+                        </>
                       ) : null}
                       <button
                         type="button"
@@ -224,6 +237,17 @@ export function ExamsPage() {
           examTitle={testCasesExam.title}
           onClose={() => {
             setTestCasesExam(null);
+            load();
+          }}
+        />
+      ) : null}
+      {questionsExam ? (
+        <PracticalQuestionsModal
+          examId={questionsExam.id}
+          examTitle={questionsExam.title}
+          totalMarks={questionsExam.totalMarks}
+          onClose={() => {
+            setQuestionsExam(null);
             load();
           }}
         />

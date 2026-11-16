@@ -62,7 +62,47 @@ export interface Exam {
   updatedAt: string;
   questions?: McqQuestion[];
   practicalTests?: PracticalTestCase[];
-  _count?: { questions: number; assignments: number; practicalTests?: number };
+  practicalQuestions?: PracticalQuestion[];
+  _count?: { questions: number; assignments: number; practicalTests?: number; practicalQuestions?: number };
+}
+
+/** A manually-authored coding question grouping one or more
+ * PracticalTestCase checks. `marks` is informational/organizational only —
+ * it does not change how test cases are scored (see
+ * server/src/lib/runAutoAssessment.ts). */
+export interface PracticalQuestion {
+  id: string;
+  examId: string;
+  title: string;
+  scenario: string;
+  instructions: string;
+  requirements: string[];
+  marks: number;
+  difficulty: Difficulty;
+  sortOrder: number;
+  testCaseCount: number;
+}
+
+export type PracticalQuestionInput = Omit<PracticalQuestion, "id" | "examId" | "sortOrder" | "testCaseCount">;
+
+/** What the student-facing practical workspace endpoint sends — safe fields
+ * only, never the answer-key (expression/isHidden live on PracticalTestCase,
+ * never exposed here). */
+export interface StudentPracticalQuestion {
+  id: string;
+  title: string;
+  scenario: string;
+  instructions: string;
+  requirements: string[];
+  marks: number;
+  difficulty: Difficulty;
+  sortOrder: number;
+}
+
+export interface PracticalQuestionAssetInfo {
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export type PracticalTestKind =
@@ -106,6 +146,9 @@ export interface PracticalTestCase {
   /** True (default) = private/hidden evaluation case, never shown to or
    * run for a student's practice run. False = a public sample test case. */
   isHidden: boolean;
+  /** Optional PracticalQuestion grouping — null means "ungrouped" (every
+   * existing test case created before this field existed). */
+  questionId: string | null;
 }
 
 export type TestCaseResult = {
@@ -116,6 +159,7 @@ export type TestCaseResult = {
   earned: number;
   passed: boolean;
   detail: string;
+  questionId: string | null;
 };
 
 /** Returned by both the student-facing "Run Tests" practice endpoint and
