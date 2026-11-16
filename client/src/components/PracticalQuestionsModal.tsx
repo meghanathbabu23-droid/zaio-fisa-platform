@@ -14,19 +14,22 @@ import { ModalShell } from "./ui/Modal/ModalShell";
 import { Button } from "./ui/Button";
 import { StateBanner } from "./ui/StateBanner";
 
-const MAX_ASSET_BYTES = 20 * 1024 * 1024;
+export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 
 /** base = floor(total/count), remainder distributed one-each to the first
  * `remainder` questions — matches server/src/lib/mcqMarks.ts exactly (same
- * algorithm already duplicated client-side in ExamFormModal.tsx for MCQ). */
-function autoDistributeMarks(questionCount: number, totalMarks: number): number[] {
+ * algorithm already duplicated client-side in ExamFormModal.tsx for MCQ).
+ * Exported so the inline question-authoring section of
+ * PracticalExamFormModal.tsx can reuse the identical algorithm rather than
+ * a second client-side copy of it. */
+export function autoDistributeMarks(questionCount: number, totalMarks: number): number[] {
   if (questionCount <= 0) return [];
   const base = Math.floor(totalMarks / questionCount);
   const remainder = totalMarks % questionCount;
   return Array.from({ length: questionCount }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
-const emptyDraft = (): PracticalQuestionInput => ({
+export const emptyDraft = (): PracticalQuestionInput => ({
   title: "",
   scenario: "",
   instructions: "",
@@ -35,7 +38,7 @@ const emptyDraft = (): PracticalQuestionInput => ({
   difficulty: "MEDIUM",
 });
 
-function readFileAsBase64(file: File): Promise<string> {
+export function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {

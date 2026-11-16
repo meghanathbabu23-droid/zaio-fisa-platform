@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createExam, createPracticalExam, deleteExam, fetchCohorts, fetchExams, setExamActive } from "../api";
+import { createExam, deleteExam, fetchCohorts, fetchExams, setExamActive } from "../api";
 import { ExamFormModal } from "../components/ExamFormModal";
 import { GenerateExamModal } from "../components/GenerateExamModal";
 import { PracticalExamFormModal } from "../components/PracticalExamFormModal";
@@ -26,6 +26,7 @@ export function ExamsPage() {
   const [exams, setExams] = useState<Awaited<ReturnType<typeof fetchExams>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [practicalOpen, setPracticalOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
@@ -99,6 +100,7 @@ export function ExamsPage() {
       />
       <div className="flex-1 space-y-4 p-8">
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
+        {notice ? <StateBanner tone="warning">{notice}</StateBanner> : null}
         <div className="flex gap-2">
           <button
             type="button"
@@ -215,19 +217,12 @@ export function ExamsPage() {
       {practicalOpen ? (
         <PracticalExamFormModal
           cohorts={cohorts}
-          saving={saving}
           onClose={() => setPracticalOpen(false)}
-          onSave={async (data) => {
-            setSaving(true);
-            try {
-              await createPracticalExam(data);
-              setPracticalOpen(false);
-              load();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Save failed");
-            } finally {
-              setSaving(false);
-            }
+          onSaved={(warning) => {
+            setError(null);
+            setNotice(warning);
+            setPracticalOpen(false);
+            load();
           }}
         />
       ) : null}
