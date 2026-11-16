@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { aiConfig } from "./aiConfig.js";
 import type { AiClient, Difficulty, GeneratedTestCase } from "./aiClient.js";
 import { contentHash, findMostSimilar, recentSummaries } from "./embeddingSimilarity.js";
+import { validateGeneratedCodingQuestion, validateGeneratedMcq } from "./aiResponseValidation.js";
 import { autoDistributeMarks } from "./mcqMarks.js";
 import { recordAuditLog } from "./auditLog.js";
 
@@ -95,10 +96,20 @@ async function resolveMcqSlot(
     stat.attempts++;
     const avoidSummaries = await recentSummaries(slot.topic, ExamType.MCQ);
     const generated = await aiClient.generateMcq({ topic: slot.topic, difficulty: slot.difficulty, avoidSummaries });
+    const shapeProblems = validateGeneratedMcq(generated);
+    if (shapeProblems.length > 0) {
+      // Never logs the malformed value itself — only which fields were
+      // wrong — since it's untrusted model output. Treated as a retriable
+      // rejection, same as a duplicate, rather than failing the whole job
+      // over one bad response.
+      // eslint-disable-next-line no-console
+      console.error(`[questionGenerator] malformed MCQ response, retrying: ${shapeProblems.join("; ")}`);
+      continue;
+    }
     const text = `${generated.prompt} ${generated.options.join(" ")}`;
     const hash = contentHash(text);
     const embedding = await aiClient.embed(text);
-    const match = await findMostSimilar(slot.topic, ExamType.MCQ, hash, embedding);
+    const match = await findMostSimilar(slot.topic, ExamType.MCQ, hash, embedding, aiConfig.activeEmbeddingModel);
     const similarity = match?.similarity ?? 0;
     stat.maxSimilaritySeen = Math.max(stat.maxSimilaritySeen, similarity);
     if (match && similarity >= aiConfig.similarityThreshold) continue;
@@ -115,7 +126,7 @@ async function resolveMcqSlot(
         summary: generated.summary,
         contentHash: hash,
         embedding: JSON.stringify(embedding),
-        embeddingModel: "voyage-3",
+        embeddingModel: aiConfig.activeEmbeddingModel,
       },
     });
     return { accepted: { ...slot, ...generated, hash, embedding, embeddingId: row.id }, stat };
@@ -132,10 +143,16 @@ async function resolveChallengeSlot(
     stat.attempts++;
     const avoidSummaries = await recentSummaries(slot.topic, ExamType.PRACTICAL);
     const generated = await aiClient.generateCodingQuestion({ topic: slot.topic, difficulty: slot.difficulty, avoidSummaries });
+    const shapeProblems = validateGeneratedCodingQuestion(generated);
+    if (shapeProblems.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(`[questionGenerator] malformed coding-question response, retrying: ${shapeProblems.join("; ")}`);
+      continue;
+    }
     const text = `${generated.businessContext} ${generated.functionalRequirements.join(" ")} ${generated.summary}`;
     const hash = contentHash(text);
     const embedding = await aiClient.embed(text);
-    const match = await findMostSimilar(slot.topic, ExamType.PRACTICAL, hash, embedding);
+    const match = await findMostSimilar(slot.topic, ExamType.PRACTICAL, hash, embedding, aiConfig.activeEmbeddingModel);
     const similarity = match?.similarity ?? 0;
     stat.maxSimilaritySeen = Math.max(stat.maxSimilaritySeen, similarity);
     if (match && similarity >= aiConfig.similarityThreshold) continue;
@@ -148,7 +165,7 @@ async function resolveChallengeSlot(
         summary: generated.summary,
         contentHash: hash,
         embedding: JSON.stringify(embedding),
-        embeddingModel: "voyage-3",
+        embeddingModel: aiConfig.activeEmbeddingModel,
       },
     });
     return { accepted: { ...slot, ...generated, hash, embedding, embeddingId: row.id }, stat };
@@ -196,8 +213,8 @@ export async function generateExam(config: GenerationConfig, adminId: string, ai
       requestedByAdminId: adminId,
       configJson: JSON.stringify(config),
       status: "PENDING",
-      aiModel: "claude-sonnet-4-5",
-      embeddingModel: "voyage-3",
+      aiModel: aiConfig.activeLlmModel,
+      embeddingModel: aiConfig.activeEmbeddingModel,
     },
   });
 
@@ -271,7 +288,7 @@ export async function generateExam(config: GenerationConfig, adminId: string, ai
         action: "EXAM_AI_GENERATED",
         targetType: "Exam",
         targetId: exam.id,
-        detail: `model=claude-sonnet-4-5, mcq=${accepted.length}, topics=${config.topics.join(",")}`,
+        detail: `model=${aiConfig.activeLlmModel}, mcq=${accepted.length}, topics=${config.topics.join(",")}`,
       });
       return { status: "COMPLETED", jobId: job.id, examId: exam.id };
     }
@@ -352,7 +369,7 @@ export async function generateExam(config: GenerationConfig, adminId: string, ai
       action: "EXAM_AI_GENERATED",
       targetType: "Exam",
       targetId: exam.id,
-      detail: `model=claude-sonnet-4-5, challenges=${accepted.length}, topics=${config.topics.join(",")}`,
+      detail: `model=${aiConfig.activeLlmModel}, challenges=${accepted.length}, topics=${config.topics.join(",")}`,
     });
     return { status: "COMPLETED", jobId: job.id, examId: exam.id };
   } catch (e) {

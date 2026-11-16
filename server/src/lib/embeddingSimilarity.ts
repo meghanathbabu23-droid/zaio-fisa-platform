@@ -27,20 +27,32 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 export type SimilarityMatch = { similarity: number; summary: string } | null;
 
 /**
- * Finds the most similar prior question in the same (topic, questionType)
- * bucket, by exact contentHash match first (similarity 1.0, cheap), then by
- * cosine similarity against stored embeddings. Returns null when the
- * bucket is empty — a brand-new topic can never be rejected as a
- * duplicate of nothing.
+ * Finds the most similar prior question in the same (topic, questionType,
+ * embeddingModel) bucket, by exact contentHash match first (similarity
+ * 1.0, cheap), then by cosine similarity against stored embeddings.
+ * Returns null when the bucket is empty — a brand-new topic can never be
+ * rejected as a duplicate of nothing.
+ *
+ * embeddingModel is part of the bucket key deliberately: two different
+ * embedding models (e.g. voyage-3 vs voyage-4-lite) can produce vectors of
+ * the exact same dimension without those vectors being meaningfully
+ * comparable — different models encode semantic space differently, so a
+ * cosine similarity across models is not a crash or a clean zero, it's a
+ * number that LOOKS valid but means nothing. Scoping by embeddingModel
+ * means switching models cleanly starts a fresh dedup history for new
+ * questions instead of silently comparing against incomparable old
+ * vectors (which could produce either false "duplicate" rejections or
+ * missed real duplicates).
  */
 export async function findMostSimilar(
   topic: string,
   questionType: ExamType,
   hash: string,
-  embedding: number[]
+  embedding: number[],
+  embeddingModel: string
 ): Promise<SimilarityMatch> {
   const bucket = await prisma.generatedQuestionEmbedding.findMany({
-    where: { topic, questionType },
+    where: { topic, questionType, embeddingModel },
   });
   if (bucket.length === 0) return null;
 

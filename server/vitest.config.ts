@@ -32,6 +32,35 @@ export default defineConfig({
       // Test suite default: open tester registration is off unless a test file
       // (openTestRegistration.test.ts) explicitly enables it for its own run.
       ENABLE_OPEN_TEST_REGISTRATION: "false",
+      // Root cause of a previously-flaky/env-dependent test: @prisma/client
+      // auto-loads server/.env as a side effect the first time it's
+      // imported (dotenv-style — it only fills in vars not already set, it
+      // never overrides ones that are). Any var not explicitly forced here
+      // is therefore at the mercy of whichever test file happens to import
+      // prisma.js first, which can leak a real, developer-machine-specific
+      // .env value (e.g. a provider switched to gmail_smtp for a demo) into
+      // otpConfig's/aiConfig's module-level singletons for the entire test
+      // run. Forcing every provider-related var here, explicitly, closes
+      // this whole class of import-order-dependent leakage — exactly the
+      // same reasoning server/src/index.ts already documents for why it
+      // calls process.loadEnvFile itself before anything else can.
+      EMAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "",
+      RESEND_FROM_EMAIL: "",
+      SMTP_USER: "",
+      SMTP_APP_PASSWORD: "",
+      GEMINI_API_KEY: "",
+      VOYAGE_API_KEY: "",
+      OPENAI_API_KEY: "",
+      AI_LLM_PROVIDER: "gemini",
+      // Same reasoning as above, for the Phase 2 MongoDB cutover switch in
+      // src/prisma.ts — if a developer's real .env ever sets this to
+      // "mongodb" for a real deployment, the SQLite test suite must never
+      // silently inherit it (it would fail prisma.ts's own URL/provider
+      // cross-check immediately, loudly, rather than quietly running
+      // against the wrong provider — but forcing it here means that check
+      // never even gets exercised by accident during a normal test run).
+      ACTIVE_DB_PROVIDER: "sqlite",
     },
   },
 });

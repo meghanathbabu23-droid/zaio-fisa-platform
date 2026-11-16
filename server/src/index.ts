@@ -22,7 +22,7 @@ const { assertAiConfigSafeToBoot } = await import("./lib/aiConfig.js");
 assertOtpConfigSafeToBoot();
 assertCorsConfigSafeToBoot();
 assertOpenTestRegistrationSafeToBoot();
-// Missing ANTHROPIC_API_KEY/VOYAGE_API_KEY never blocks boot — only a
+// Missing GEMINI_API_KEY/VOYAGE_API_KEY never blocks boot — only a
 // malformed-but-present key does. AI generation is optional; everything
 // else runs independently of whether it's configured.
 assertAiConfigSafeToBoot();

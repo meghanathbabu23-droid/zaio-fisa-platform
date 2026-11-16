@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { getStorageProvider } from "./storage/index.js";
 import { classifyRecordingBuffer } from "./recordingVerify.js";
 import { saveRecordingFile } from "./recordingStorage.js";
+import { withPrismaWriteConflictRetry } from "./prismaWriteConflict.js";
 
 /** Generous for a ~4s MediaRecorder timeslice chunk — far smaller than the
  * old single-shot endpoint's 20MB whole-recording cap. */
@@ -68,10 +69,23 @@ export async function receiveChunk(params: {
 
   const storageKey = chunkStorageKey(sessionId, kind, sequenceNumber);
   await getStorageProvider().save(storageKey, buffer);
-  await prisma.proctoringRecordingChunk.create({
-    data: { sessionId, kind, sequenceNumber, sha256: actualSha256, sizeBytes: buffer.length, storageKey },
+
+  const write = await withPrismaWriteConflictRetry(async (): Promise<ReceiveChunkResult> => {
+    const raced = await prisma.proctoringRecordingChunk.findUnique({
+      where: { sessionId_kind_sequenceNumber: { sessionId, kind, sequenceNumber } },
+    });
+    if (raced) {
+      return raced.sha256 === actualSha256
+        ? { ok: true, alreadyReceived: true }
+        : { ok: false, error: "CHUNK_CONFLICT" };
+    }
+    await prisma.proctoringRecordingChunk.create({
+      data: { sessionId, kind, sequenceNumber, sha256: actualSha256, sizeBytes: buffer.length, storageKey },
+    });
+    return { ok: true, alreadyReceived: false };
   });
-  return { ok: true, alreadyReceived: false };
+
+  return write;
 }
 
 export type CompleteError = "MISSING_CHUNKS" | "FINAL_CHECKSUM_MISMATCH" | "EMPTY";

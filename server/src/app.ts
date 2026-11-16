@@ -31,6 +31,7 @@ import { isOpenTestRegistrationActive } from "./lib/openTestRegistrationConfig.j
 import { corsConfig } from "./lib/corsConfig.js";
 import { requireAdminAuth } from "./middleware/requireAdminAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
+import { apiErrorHandler, forwardAsyncErrorsOnRouter } from "./middleware/forwardAsyncErrors.js";
 
 const { SUPER_ADMIN, ADMIN, ASSESSOR, MODERATOR } = AdminRole;
 
@@ -69,6 +70,7 @@ app.use(cookieParser());
 // Proctoring recording uploads must parse before the default 1mb JSON limit.
 const proctoringStudentMount = express.Router();
 proctoringStudentMount.use(express.json({ limit: "25mb" }));
+forwardAsyncErrorsOnRouter(proctoringStudentRouter);
 proctoringStudentMount.use(proctoringStudentRouter);
 app.use("/api/student/proctoring", proctoringStudentMount); // exempt: requireStudent-protected
 
@@ -173,3 +175,5 @@ app.use(
     next(err);
   }
 );
+
+app.use(apiErrorHandler);
