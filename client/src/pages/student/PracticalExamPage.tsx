@@ -263,7 +263,6 @@ export function PracticalExamPage() {
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-zaio-cloud bg-zaio-card px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-display font-semibold text-zaio-ink">{title}</p>
-          <p className="text-xs text-zaio-ink/50">{instructions}</p>
         </div>
         <div className="flex items-center gap-3 text-xs">
           <button

@@ -55,7 +55,7 @@ describe("PracticalExamPage — question brief rendering", () => {
     vi.mocked(api.fetchPracticalWorkspace).mockResolvedValue({
       exam: {
         title: "FISA Practical",
-        instructions: "Flat instructions string — only the header's truncated preview uses this when questions exist.",
+        instructions: "Flat instructions string — must not be duplicated in the page header once questions exist.",
         durationMinutes: 60,
         questions: [
           {
@@ -75,6 +75,14 @@ describe("PracticalExamPage — question brief rendering", () => {
 
     const user = userEvent.setup();
     renderPage();
+
+    // The page header shows only the exam title — the flat instructions
+    // string must not also render there, duplicating the Brief & Rubric
+    // panel's full question content.
+    await screen.findByText("FISA Practical");
+    expect(
+      screen.queryByText("Flat instructions string — must not be duplicated in the page header once questions exist.")
+    ).not.toBeInTheDocument();
 
     const briefButton = await screen.findByRole("button", { name: /View instructions and marking rubric/i });
     await user.click(briefButton);
