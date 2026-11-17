@@ -25,6 +25,9 @@ import type {
   ProctoringMonitorSession,
   ResultsRow,
   ResultsSummary,
+  PracticalQuestion,
+  PracticalQuestionAssetInfo,
+  PracticalQuestionInput,
   PracticalSubmissionRecord,
   PracticalTestCase,
   PracticalTestReport,
@@ -32,6 +35,7 @@ import type {
   Student,
   StudentAuthStudent,
   StudentInput,
+  StudentPracticalQuestion,
 } from "./types";
 import { downloadResultsXlsx } from "./lib/exportResults";
 import type { WorkspaceFile } from "./lib/preview";
@@ -462,10 +466,41 @@ export async function logoutStudent(): Promise<void> {
 }
 
 export async function fetchPracticalWorkspace(assignmentId: string): Promise<{
-  exam: { title: string; instructions: string; durationMinutes: number };
+  exam: {
+    title: string;
+    instructions: string;
+    durationMinutes: number;
+    questions: StudentPracticalQuestion[];
+  };
   workspace: PracticalWorkspace;
 }> {
   return handleResponse(await authedStudentFetch(`/api/student/assignments/${assignmentId}/practical`));
+}
+
+export async function fetchStudentPracticalQuestionAssets(
+  assignmentId: string
+): Promise<(PracticalQuestionAssetInfo & { questionId: string })[]> {
+  return handleResponse(
+    await authedStudentFetch(`/api/student/assignments/${assignmentId}/practical/practical-questions/assets`)
+  );
+}
+
+/** Fetches a question reference asset's raw bytes as a Blob, for the
+ * student to view/download — mirrors how the existing practical endpoints
+ * are called (authedStudentFetch, not adminFetch). */
+export async function fetchStudentPracticalQuestionAssetBlob(
+  assignmentId: string,
+  questionId: string,
+  filename: string
+): Promise<Blob> {
+  const res = await authedStudentFetch(
+    `/api/student/assignments/${assignmentId}/practical/practical-questions/assets/${encodeURIComponent(questionId)}/${encodeURIComponent(filename)}`
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    throw new Error((body as { error?: string }).error ?? res.statusText);
+  }
+  return res.blob();
 }
 
 export async function autosavePractical(
@@ -546,6 +581,106 @@ export async function createPracticalTestCase(
 export async function deletePracticalTestCase(examId: string, testId: string): Promise<void> {
   await handleResponse(
     await adminFetch(`/api/exams/${examId}/practical-tests/${testId}`, { method: "DELETE" })
+  );
+}
+
+/** Full-body update — the server's PUT route validates/persists the whole
+ * test case, not a partial patch, so every caller (including "just change
+ * which question this belongs to") must resend the complete object. */
+export async function updatePracticalTestCase(
+  examId: string,
+  testId: string,
+  data: Omit<PracticalTestCase, "id" | "examId" | "sortOrder">
+): Promise<PracticalTestCase> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-tests/${testId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
+  );
+}
+
+export async function fetchPracticalQuestions(examId: string): Promise<PracticalQuestion[]> {
+  return handleResponse(await adminFetch(`/api/exams/${examId}/practical-questions`));
+}
+
+export async function createPracticalQuestion(
+  examId: string,
+  data: PracticalQuestionInput
+): Promise<PracticalQuestion> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  );
+}
+
+export async function updatePracticalQuestion(
+  examId: string,
+  questionId: string,
+  data: PracticalQuestionInput
+): Promise<PracticalQuestion> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions/${questionId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
+  );
+}
+
+export async function deletePracticalQuestion(examId: string, questionId: string): Promise<void> {
+  await handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions/${questionId}`, { method: "DELETE" })
+  );
+}
+
+export async function reorderPracticalQuestion(
+  examId: string,
+  questionId: string,
+  direction: "up" | "down"
+): Promise<{ ok: true; moved: boolean }> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions/${questionId}/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ direction }),
+    })
+  );
+}
+
+export async function fetchPracticalQuestionReferenceAssets(
+  examId: string,
+  questionId: string
+): Promise<PracticalQuestionAssetInfo[]> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions/${questionId}/assets`)
+  );
+}
+
+export async function uploadPracticalQuestionReferenceAsset(
+  examId: string,
+  questionId: string,
+  filename: string,
+  dataBase64: string
+): Promise<PracticalQuestionAssetInfo> {
+  return handleResponse(
+    await adminFetch(`/api/exams/${examId}/practical-questions/${questionId}/assets`, {
+      method: "POST",
+      body: JSON.stringify({ filename, dataBase64 }),
+    })
+  );
+}
+
+export async function deletePracticalQuestionReferenceAsset(
+  examId: string,
+  questionId: string,
+  filename: string
+): Promise<void> {
+  await handleResponse(
+    await adminFetch(
+      `/api/exams/${examId}/practical-questions/${questionId}/assets/${encodeURIComponent(filename)}`,
+      { method: "DELETE" }
+    )
   );
 }
 

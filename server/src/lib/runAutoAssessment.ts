@@ -66,6 +66,7 @@ export async function runAutoAssessmentForSubmission(submissionId: string) {
       targetFile: t.targetFile,
       expression: t.expression,
       points: t.points,
+      questionId: t.questionId,
     }))
   );
 

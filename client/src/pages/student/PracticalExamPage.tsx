@@ -15,7 +15,7 @@ import {
 } from "../../api";
 import { buildPreviewDocument, langForFile, type WorkspaceFile } from "../../lib/preview";
 import { getIdeExtensions, IDE_CHROME_VARS, type IdeThemeMode } from "../../lib/codeMirrorIdeTheme";
-import type { PracticalTestReport, PracticalWorkspace } from "../../types";
+import type { PracticalTestReport, PracticalWorkspace, StudentPracticalQuestion } from "../../types";
 import {
   bindProctoringExamMonitors,
   logProctoringEvent,
@@ -71,6 +71,7 @@ export function PracticalExamPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [questions, setQuestions] = useState<StudentPracticalQuestion[]>([]);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [activeFile, setActiveFile] = useState("index.html");
   const [locked, setLocked] = useState(false);
@@ -116,8 +117,20 @@ export function PracticalExamPage() {
     const data = await fetchPracticalWorkspace(assignmentId);
     setTitle(data.exam.title);
     setInstructions(data.exam.instructions);
+    setQuestions(data.exam.questions);
     applyWorkspace(data.workspace);
   }, [assignmentId]);
+
+  /** Legacy/ungrouped test cases (questionId === null) still get credit for
+   * their results — they just show under a trailing "General checks"
+   * heading instead of a question card, so nothing from the test report
+   * silently disappears when an exam has no Questions set up. */
+  function progressFor(questionId: string | null): { passed: number; total: number } | null {
+    if (!testReport) return null;
+    const inGroup = testReport.results.filter((r) => r.questionId === questionId);
+    if (inGroup.length === 0) return null;
+    return { passed: inGroup.filter((r) => r.passed).length, total: inGroup.length };
+  }
 
   function applyWorkspace(ws: PracticalWorkspace) {
     setFiles(ws.files.map((f) => ({ filename: f.filename, content: f.content })));
@@ -311,9 +324,25 @@ export function PracticalExamPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-[var(--ide-muted)]">
               Brief &amp; rubric
             </p>
-            <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-[var(--ide-text)]">
-              {instructions}
-            </p>
+            {questions.length > 0 ? (
+              <ul className="mt-1 space-y-1">
+                {questions.map((q) => {
+                  const progress = progressFor(q.id);
+                  return (
+                    <li key={q.id} className="text-xs leading-relaxed text-[var(--ide-text)]">
+                      <span className="font-medium">{q.title}</span> · {q.marks} mark{q.marks === 1 ? "" : "s"}
+                      {progress ? (
+                        <span className="text-[var(--ide-muted)]"> · {progress.passed}/{progress.total} passing</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-[var(--ide-text)]">
+                {instructions}
+              </p>
+            )}
           </div>
 
           <div className="border-b border-[var(--ide-border)] px-3 py-2">
@@ -468,9 +497,52 @@ export function PracticalExamPage() {
               <span className="font-semibold text-zaio-ink">Candidate Notice:</span> Code your solution in
               the file explorer using <code className="bg-zaio-card px-1 py-0.5 rounded border border-zaio-cloud">index.html</code> and <code className="bg-zaio-card px-1 py-0.5 rounded border border-zaio-cloud">styles.css</code>. Autosave is enabled. All test cases run upon clicking Submit Final.
             </div>
-            <div className="whitespace-pre-line text-sm leading-relaxed text-zaio-ink/90 font-sans">
-              {instructions}
-            </div>
+            {questions.length > 0 ? (
+              <div className="space-y-4">
+                {questions.map((q) => {
+                  const progress = progressFor(q.id);
+                  return (
+                    <div key={q.id} className="rounded-lg border border-zaio-cloud p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-display text-sm font-semibold text-zaio-ink">{q.title}</h3>
+                        <span className="rounded bg-zaio-ink/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zaio-ink/60">
+                          {q.difficulty}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-zaio-ink/50">
+                        {q.marks} mark{q.marks === 1 ? "" : "s"}
+                        {progress ? ` · ${progress.passed}/${progress.total} checks passing` : ""}
+                      </p>
+                      {q.scenario ? (
+                        <p className="mt-2 whitespace-pre-line text-sm text-zaio-ink/90">{q.scenario}</p>
+                      ) : null}
+                      {q.instructions ? (
+                        <p className="mt-2 whitespace-pre-line text-sm text-zaio-ink/80">{q.instructions}</p>
+                      ) : null}
+                      {q.requirements.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-zaio-ink/80">
+                          {q.requirements.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {progressFor(null) ? (
+                  <div className="rounded-lg border border-zaio-cloud p-4">
+                    <h3 className="font-display text-sm font-semibold text-zaio-ink">General checks</h3>
+                    <p className="mt-1 text-xs text-zaio-ink/50">
+                      {progressFor(null)!.passed}/{progressFor(null)!.total} checks passing
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="whitespace-pre-line text-sm leading-relaxed text-zaio-ink/90 font-sans">
+                {instructions}
+              </div>
+            )}
           </div>
         </ModalShell>
       ) : null}

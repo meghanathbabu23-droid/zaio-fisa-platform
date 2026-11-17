@@ -99,6 +99,7 @@ model Exam {
   questions       McqQuestion[]
   assignments     ExamAssignment[]
   practicalTests  PracticalTestCase[]
+  practicalQuestions PracticalQuestion[]
 }
 
 model PracticalTestCase {
@@ -117,6 +118,55 @@ model PracticalTestCase {
   /// An admin must explicitly flip this to false to make it a public sample
   /// test case shown to students. See server/src/routes/practical.ts.
   isHidden   Boolean           @default(true)
+  /// Optional grouping under a PracticalQuestion. Nullable for backward
+  /// compatibility — every existing test case defaults to null ("ungrouped")
+  /// and keeps working exactly as before. onDelete: SetNull (not Cascade) —
+  /// deleting a question un-links its test cases rather than deleting
+  /// grading checks out from under an exam.
+  questionId String?
+  question   PracticalQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+}
+
+/// A manually-authored coding question grouping one or more automated
+/// PracticalTestCase checks. marks is informational/organizational only —
+/// it drives the "question marks must sum to Exam.totalMarks" validation
+/// (server/src/lib/mcqMarks.ts, reused as-is) and the student-facing label;
+/// it does NOT change how PracticalTestCase.points are scored (see
+/// server/src/lib/runAutoAssessment.ts, which stays untouched).
+model PracticalQuestion {
+  id           String               @id @default(cuid())
+  examId       String
+  exam         Exam                 @relation(fields: [examId], references: [id], onDelete: Cascade)
+  title        String
+  scenario     String               @default("")
+  instructions String               @default("")
+  /// JSON string array — same convention as ModerationCase.advisoryFlagsJson.
+  requirements String               @default("[]")
+  marks        Int                  @default(0)
+  /// "EASY" | "MEDIUM" | "HARD" — plain string, validated in app code, same
+  /// convention as GeneratedQuestionEmbedding.difficulty.
+  difficulty   String               @default("MEDIUM")
+  sortOrder    Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  testCases    PracticalTestCase[]
+  assets       PracticalQuestionReferenceAsset[]
+}
+
+/// Per-question reference images/PDFs — a brand-new, separate model from any
+/// per-test-case asset feature, so nothing else touches or depends on it.
+model PracticalQuestionReferenceAsset {
+  id         String            @id @default(cuid())
+  questionId String
+  question   PracticalQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+  sha256     String
+  createdAt  DateTime          @default(now())
+
+  @@unique([questionId, filename])
 }
 
 model McqQuestion {

@@ -41,12 +41,13 @@ function isValidDomBehaviorSpec(raw: string): boolean {
 }
 
 function parseTestBody(body: Record<string, unknown>) {
-  const { label, kind, targetFile, expression, points, sortOrder, isHidden } = body;
+  const { label, kind, targetFile, expression, points, sortOrder, isHidden, questionId } = body;
   if (typeof label !== "string" || typeof kind !== "string" || typeof expression !== "string") {
     return null;
   }
   if (!label.trim() || !expression.trim() || !KINDS.has(kind)) return null;
   if (kind === PracticalTestKind.DOM_BEHAVIOR && !isValidDomBehaviorSpec(expression.trim())) return null;
+  if (questionId !== undefined && questionId !== null && typeof questionId !== "string") return null;
   const pts = typeof points === "number" ? Math.max(1, Math.floor(points)) : 1;
   const order = typeof sortOrder === "number" ? sortOrder : 0;
   const file =
@@ -65,7 +66,19 @@ function parseTestBody(body: Record<string, unknown>) {
     // Hidden by default — an admin must explicitly opt a test case into
     // being a public sample by sending isHidden: false.
     isHidden: typeof isHidden === "boolean" ? isHidden : true,
+    // Optional grouping under a PracticalQuestion — null/absent means
+    // "ungrouped", the backward-compatible default for every existing test
+    // case. Membership (same exam) is verified by the caller, not here.
+    questionId: (questionId as string | null | undefined) ?? null,
   };
+}
+
+/** Verifies a questionId, if provided, actually belongs to the named exam —
+ * prevents linking a test case to another exam's question. */
+async function validateQuestionBelongsToExam(questionId: string | null, examId: string): Promise<boolean> {
+  if (questionId === null) return true;
+  const question = await prisma.practicalQuestion.findFirst({ where: { id: questionId, examId } });
+  return question !== null;
 }
 
 practicalTestCasesRouter.get("/", async (req: Request<{ examId: string }>, res) => {
@@ -104,6 +117,10 @@ practicalTestCasesRouter.post("/", writeOnly, async (req: AuthedAdminRequest, re
     });
     return;
   }
+  if (!(await validateQuestionBelongsToExam(data.questionId, exam.id))) {
+    res.status(400).json({ error: "questionId does not belong to this exam" });
+    return;
+  }
   const count = await prisma.practicalTestCase.count({ where: { examId: exam.id } });
   const row = await prisma.practicalTestCase.create({
     data: { examId: exam.id, ...data, sortOrder: data.sortOrder || count },
@@ -132,6 +149,10 @@ practicalTestCasesRouter.put("/:testId", writeOnly, async (req: AuthedAdminReque
     res.status(409).json({
       error: "Cannot edit this test case: its exam already has at least one student assignment. Archive it and create a new exam instead.",
     });
+    return;
+  }
+  if (!(await validateQuestionBelongsToExam(data.questionId, existing.examId))) {
+    res.status(400).json({ error: "questionId does not belong to this exam" });
     return;
   }
   try {

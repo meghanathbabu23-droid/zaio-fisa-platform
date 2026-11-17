@@ -14,6 +14,7 @@ import {
   isValidFilename,
 } from "../lib/practical.js";
 import { withPrismaWriteConflictRetry } from "../lib/prismaWriteConflict.js";
+import { getExamAssetStorageProvider } from "../lib/storage/examAssetStorage.js";
 import { forwardAsyncErrorsOnRouter } from "../middleware/forwardAsyncErrors.js";
 
 export const practicalStudentRouter = Router({ mergeParams: true });
@@ -83,11 +84,26 @@ practicalStudentRouter.get("/", async (req: AuthedRequest, res) => {
     where: { id: ws.id },
     include: { files: true },
   });
+  const questions = await prisma.practicalQuestion.findMany({
+    where: { examId: gate.assignment.examId },
+    orderBy: { sortOrder: "asc" },
+  });
   res.json({
     exam: {
       title: gate.assignment.exam.title,
       instructions: gate.assignment.exam.instructions,
       durationMinutes: gate.assignment.exam.durationMinutes,
+      // Safe fields only — never expression/isHidden (no answer-key leak).
+      questions: questions.map((q) => ({
+        id: q.id,
+        title: q.title,
+        scenario: q.scenario,
+        instructions: q.instructions,
+        requirements: JSON.parse(q.requirements) as string[],
+        marks: q.marks,
+        difficulty: q.difficulty,
+        sortOrder: q.sortOrder,
+      })),
     },
     workspace: mapWorkspace(full),
   });
@@ -140,10 +156,74 @@ practicalStudentRouter.post("/run-tests", async (req: AuthedRequest, res) => {
       targetFile: t.targetFile,
       expression: t.expression,
       points: t.points,
+      questionId: t.questionId,
     }))
   );
   res.json(report);
 });
+
+/**
+ * Lists every PracticalQuestionReferenceAsset across the assignment's exam,
+ * flattened — not filtered by anything, since a question's reference
+ * material describes the question itself, which the student must solve
+ * regardless of which (if any) test case ended up attached to it.
+ */
+practicalStudentRouter.get("/practical-questions/assets", async (req: AuthedRequest, res) => {
+  const assignmentId = req.params.assignmentId!;
+  const gate = await assertPracticalAccess(req, assignmentId);
+  if ("error" in gate) {
+    res.status(gate.status).json({ error: gate.error });
+    return;
+  }
+  const assets = await prisma.practicalQuestionReferenceAsset.findMany({
+    where: { question: { examId: gate.assignment.examId } },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(
+    assets.map((a) => ({
+      questionId: a.questionId,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+    }))
+  );
+});
+
+practicalStudentRouter.get(
+  "/practical-questions/assets/:questionId/:filename",
+  async (req: AuthedRequest, res) => {
+    const assignmentId = req.params.assignmentId!;
+    const gate = await assertPracticalAccess(req, assignmentId);
+    if ("error" in gate) {
+      res.status(gate.status).json({ error: gate.error });
+      return;
+    }
+    const asset = await prisma.practicalQuestionReferenceAsset.findUnique({
+      where: {
+        questionId_filename: { questionId: req.params.questionId, filename: req.params.filename },
+      },
+      include: { question: true },
+    });
+    if (!asset || asset.question.examId !== gate.assignment.examId) {
+      res.status(404).json({ error: "Asset not found" });
+      return;
+    }
+    const provider = getExamAssetStorageProvider();
+    if (!(await provider.exists(asset.storageKey))) {
+      res.status(404).json({ error: "File not found in storage" });
+      return;
+    }
+    res.setHeader("Content-Type", asset.mimeType);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", `inline; filename="${asset.filename}"`);
+    const stream = await provider.getStream(asset.storageKey);
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(404).json({ error: "File not found in storage" });
+      else res.destroy();
+    });
+    stream.pipe(res);
+  }
+);
 
 practicalStudentRouter.put("/autosave", async (req: AuthedRequest, res) => {
   const assignmentId = req.params.assignmentId!;

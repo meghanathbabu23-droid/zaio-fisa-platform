@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { createExam, createPracticalExam, deleteExam, fetchCohorts, fetchExams, setExamActive } from "../api";
+import { createExam, deleteExam, fetchCohorts, fetchExams, setExamActive } from "../api";
 import { ExamFormModal } from "../components/ExamFormModal";
 import { GenerateExamModal } from "../components/GenerateExamModal";
 import { PracticalExamFormModal } from "../components/PracticalExamFormModal";
 import { PracticalTestCasesModal } from "../components/PracticalTestCasesModal";
+import { PracticalQuestionsModal } from "../components/PracticalQuestionsModal";
 import { PageHeader } from "../components/PageHeader";
 import type { Cohort, ExamInput } from "../types";
 import { Button } from "../components/ui/Button";
@@ -25,10 +26,14 @@ export function ExamsPage() {
   const [exams, setExams] = useState<Awaited<ReturnType<typeof fetchExams>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [practicalOpen, setPracticalOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [testCasesExam, setTestCasesExam] = useState<{ id: string; title: string } | null>(null);
+  const [questionsExam, setQuestionsExam] = useState<{ id: string; title: string; totalMarks: number | null } | null>(
+    null
+  );
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -95,6 +100,7 @@ export function ExamsPage() {
       />
       <div className="flex-1 space-y-4 p-8">
         {error ? <StateBanner tone="error">{error}</StateBanner> : null}
+        {notice ? <StateBanner tone="warning">{notice}</StateBanner> : null}
         <div className="flex gap-2">
           <button
             type="button"
@@ -155,13 +161,22 @@ export function ExamsPage() {
                     <td className="px-6 py-4">{exam._count?.assignments ?? "—"}</td>
                     <td className="px-6 py-4 text-right">
                       {exam.type === "PRACTICAL" ? (
-                        <button
-                          type="button"
-                          className="mr-3 text-zaio-blue"
-                          onClick={() => setTestCasesExam({ id: exam.id, title: exam.title })}
-                        >
-                          Test cases
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="mr-3 text-zaio-blue"
+                            onClick={() => setQuestionsExam({ id: exam.id, title: exam.title, totalMarks: exam.totalMarks })}
+                          >
+                            Questions
+                          </button>
+                          <button
+                            type="button"
+                            className="mr-3 text-zaio-blue"
+                            onClick={() => setTestCasesExam({ id: exam.id, title: exam.title })}
+                          >
+                            Test cases
+                          </button>
+                        </>
                       ) : null}
                       <button
                         type="button"
@@ -202,19 +217,12 @@ export function ExamsPage() {
       {practicalOpen ? (
         <PracticalExamFormModal
           cohorts={cohorts}
-          saving={saving}
           onClose={() => setPracticalOpen(false)}
-          onSave={async (data) => {
-            setSaving(true);
-            try {
-              await createPracticalExam(data);
-              setPracticalOpen(false);
-              load();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Save failed");
-            } finally {
-              setSaving(false);
-            }
+          onSaved={(warning) => {
+            setError(null);
+            setNotice(warning);
+            setPracticalOpen(false);
+            load();
           }}
         />
       ) : null}
@@ -224,6 +232,17 @@ export function ExamsPage() {
           examTitle={testCasesExam.title}
           onClose={() => {
             setTestCasesExam(null);
+            load();
+          }}
+        />
+      ) : null}
+      {questionsExam ? (
+        <PracticalQuestionsModal
+          examId={questionsExam.id}
+          examTitle={questionsExam.title}
+          totalMarks={questionsExam.totalMarks}
+          onClose={() => {
+            setQuestionsExam(null);
             load();
           }}
         />

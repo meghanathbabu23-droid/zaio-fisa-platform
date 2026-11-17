@@ -11,6 +11,8 @@ import { evidenceRouter } from "./routes/evidence.js";
 import { examsRouter } from "./routes/exams.js";
 import { examsGenerateRouter } from "./routes/examsGenerate.js";
 import { practicalTestCasesRouter } from "./routes/practicalTestCases.js";
+import { practicalQuestionsRouter } from "./routes/practicalQuestions.js";
+import { practicalQuestionReferenceAssetsAdminRouter } from "./routes/practicalQuestionReferenceAssetsAdmin.js";
 import { practicalAssessorRouter, practicalStudentRouter } from "./routes/practical.js";
 import {
   proctoringAdminRouter,
@@ -74,6 +76,18 @@ forwardAsyncErrorsOnRouter(proctoringStudentRouter);
 proctoringStudentMount.use(proctoringStudentRouter);
 app.use("/api/student/proctoring", proctoringStudentMount); // exempt: requireStudent-protected
 
+// Question reference-asset uploads (base64 image/PDF, up to 20MB raw, ~27MB
+// base64-inflated) must also parse before the default 1mb JSON limit —
+// same reasoning as proctoringStudentMount above.
+const practicalQuestionAssetsMount = express.Router({ mergeParams: true });
+practicalQuestionAssetsMount.use(express.json({ limit: "30mb" }));
+practicalQuestionAssetsMount.use(
+  requireAdminAuth,
+  requireRole(SUPER_ADMIN, ADMIN),
+  practicalQuestionReferenceAssetsAdminRouter
+);
+app.use("/api/exams/:examId/practical-questions/:questionId/assets", practicalQuestionAssetsMount);
+
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => {
@@ -136,6 +150,12 @@ app.use(
   requireAdminAuth,
   requireRole(SUPER_ADMIN, ADMIN),
   practicalTestCasesRouter
+);
+app.use(
+  "/api/exams/:examId/practical-questions",
+  requireAdminAuth,
+  requireRole(SUPER_ADMIN, ADMIN),
+  practicalQuestionsRouter
 );
 app.use("/api/assessor", requireAdminAuth, requireRole(SUPER_ADMIN, ASSESSOR), assessorRouter);
 app.use("/api/results", requireAdminAuth, requireRole(SUPER_ADMIN, ADMIN), resultsRouter);
